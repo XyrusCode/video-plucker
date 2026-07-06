@@ -20,10 +20,15 @@ is nothing extra to install.
 
 ## Install
 
-Grab the latest `yt-grab_x.y.z_x64-setup.exe` from the
-[Releases](../../releases) page and run it. It is a per-user install and does
-not require administrator rights. `yt-dlp.exe` and `ffmpeg.exe` are bundled
-inside the app.
+Grab the file for your platform from the [Releases](../../releases) page:
+
+- Windows: `.exe` installer (per-user, no admin required)
+- macOS: `.dmg` (unsigned; on first launch, right-click the app and choose
+  Open to get past Gatekeeper)
+- Linux: `.deb` (Debian/Ubuntu)
+
+`yt-dlp` and `ffmpeg` are bundled inside the app, so there is nothing else to
+install.
 
 ## Building from source
 
@@ -71,10 +76,14 @@ tauri build    # produce the NSIS installer under src-tauri\target\release\bundl
 ## Releases
 
 Pushing a `v*` tag (for example `v1.0.0`) triggers the
-[release workflow](.github/workflows/release.yml), which builds the app on a
-Windows runner and publishes the installer to a GitHub Release. The workflow
-downloads the sidecar binaries automatically, so they never need to be
+[release workflow](.github/workflows/release.yml), which builds the app in
+parallel on Windows, macOS, and Linux runners and publishes the installers
+(`.exe`, `.dmg`, `.deb`) to a single GitHub Release. Each runner downloads its
+own platform's sidecar binaries automatically, so they never need to be
 committed.
+
+The macOS build targets Intel (x86_64) and runs on Apple Silicon through
+Rosetta 2. The Linux build targets x86_64.
 
 ## Notes
 
