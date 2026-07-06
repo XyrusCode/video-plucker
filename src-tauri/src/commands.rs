@@ -78,7 +78,7 @@ pub async fn fetch_metadata(
             .unwrap_or_default();
         let titles = entries
             .iter()
-            .take(50)
+            .take(500)
             .map(|e| {
                 e.get("title")
                     .and_then(Value::as_str)
@@ -149,7 +149,14 @@ pub async fn start_pluck(
     dest_dir: String,
     playlist_mode: bool,
 ) -> Result<(), String> {
-    let args = pluck::build_args(&url, &quality, &dest_dir, playlist_mode)?;
+    let archive = pluck::archive_path(&app, job_id)?;
+    let args = pluck::build_args(
+        &url,
+        &quality,
+        &dest_dir,
+        playlist_mode,
+        &archive.to_string_lossy(),
+    )?;
 
     let (mut rx, child) = app
         .shell()
@@ -170,6 +177,7 @@ pub async fn start_pluck(
     );
 
     let app_handle = app.clone();
+    let archive_task = archive.clone();
     tauri::async_runtime::spawn(async move {
         let mut throttle = Throttle::new(Duration::from_millis(150));
         while let Some(event) = rx.recv().await {
@@ -184,11 +192,16 @@ pub async fn start_pluck(
                 }
                 CommandEvent::Terminated(payload) => {
                     let was_cancelled = cancelled.load(Ordering::SeqCst);
+                    let ok = payload.code == Some(0) && !was_cancelled;
+                    // a fully-finished pluck no longer needs its resume archive
+                    if ok {
+                        let _ = std::fs::remove_file(&archive_task);
+                    }
                     let _ = app_handle.emit(
                         "pluck://done",
                         DonePayload {
                             job_id,
-                            ok: payload.code == Some(0) && !was_cancelled,
+                            ok,
                             cancelled: was_cancelled,
                         },
                     );

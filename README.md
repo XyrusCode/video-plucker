@@ -13,6 +13,12 @@ is nothing extra to install.
   (MP3 / M4A)
 - Live progress with percent, speed, and ETA (per-item and overall for
   playlists)
+- Expand a playlist pluck to see every video as its own row with individual
+  status and progress
+- Resume after a crash: plucks survive an app or network failure. yt-dlp keeps
+  partial files and a per-pluck archive of finished items, so resuming
+  continues where it stopped instead of starting over. Interrupted plucks
+  reappear on the next launch with a Resume button
 - Minimize or close to the system tray with plucks still running in the
   background; restore from the tray, or Show/Quit from its menu
 - Cancel an in-progress pluck (terminates the whole yt-dlp/ffmpeg tree)

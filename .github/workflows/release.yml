@@ -81,10 +81,12 @@ jobs:
           bin="src-tauri/binaries"
           mkdir -p "$bin"
           # yt-dlp: universal macOS binary
-          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
+          curl -fL --retry 5 --retry-all-errors \
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
             -o "$bin/yt-dlp-${{ matrix.triple }}"
           # ffmpeg: static Intel build from evermeet.cx
-          curl -fL "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o "$RUNNER_TEMP/ffmpeg.zip"
+          curl -fL --retry 5 --retry-all-errors \
+            "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o "$RUNNER_TEMP/ffmpeg.zip"
           unzip -o "$RUNNER_TEMP/ffmpeg.zip" -d "$RUNNER_TEMP/ffmpeg"
           cp "$RUNNER_TEMP/ffmpeg/ffmpeg" "$bin/ffmpeg-${{ matrix.triple }}"
           chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
@@ -96,14 +98,16 @@ jobs:
           bin="src-tauri/binaries"
           mkdir -p "$bin"
           # yt-dlp: x86_64 linux binary
-          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" \
+          curl -fL --retry 5 --retry-all-errors \
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" \
             -o "$bin/yt-dlp-${{ matrix.triple }}"
-          # ffmpeg: static amd64 build from johnvansickle.com
-          curl -fL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" \
+          # ffmpeg: static linux64 build from BtbN (GitHub-hosted, LGPL)
+          curl -fL --retry 5 --retry-all-errors \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-lgpl.tar.xz" \
             -o "$RUNNER_TEMP/ffmpeg.tar.xz"
           mkdir -p "$RUNNER_TEMP/ffmpeg"
-          tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg" --strip-components=1
-          cp "$RUNNER_TEMP/ffmpeg/ffmpeg" "$bin/ffmpeg-${{ matrix.triple }}"
+          tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg"
+          cp "$(find "$RUNNER_TEMP/ffmpeg" -type f -name ffmpeg | head -1)" "$bin/ffmpeg-${{ matrix.triple }}"
           chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
           ls -la "$bin"
 

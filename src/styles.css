@@ -333,3 +333,107 @@ select {
   overflow-y: auto;
   user-select: text;
 }
+
+/* expand toggle + per-item playlist list */
+.job-expand {
+  padding: 2px 8px;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.job-expand:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.job-resume {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.job-dismiss {
+  padding: 4px 10px;
+  color: var(--text-dim);
+}
+
+.job-items {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.pl-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  grid-template-areas: "idx title state" "idx bar bar";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.pl-idx {
+  grid-area: idx;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.pl-title {
+  grid-area: title;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-state {
+  grid-area: state;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pl-bar {
+  grid-area: bar;
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+
+.pl-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--warn);
+  border-radius: 2px;
+  transition: width 0.15s linear;
+}
+
+.pl-item[data-state="active"] .pl-state {
+  color: var(--warn);
+}
+
+.pl-item[data-state="done"] .pl-state {
+  color: var(--ok);
+}
+
+.pl-item[data-state="done"] .pl-fill {
+  background: var(--ok);
+}
+
+.pl-item[data-state="failed"] .pl-state {
+  color: var(--accent);
+}
+
+.pl-item[data-state="queued"] .pl-title {
+  color: var(--text-dim);
+}

@@ -1,9 +1,22 @@
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::sidecar;
+
+/// Per-pluck yt-dlp download archive, kept in the app data dir and keyed by
+/// job id. yt-dlp records finished items here so a resumed pluck skips them.
+pub fn archive_path(app: &AppHandle, job_id: u64) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("archives");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(format!("pluck-{job_id}.txt")))
+}
 
 /// Machine-readable progress line. `NA` appears for unknown fields.
 const PROGRESS_TEMPLATE: &str = "PROG|%(info.playlist_index)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s";
@@ -57,6 +70,7 @@ pub fn build_args(
     quality: &str,
     dest_dir: &str,
     playlist_mode: bool,
+    archive: &str,
 ) -> Result<Vec<String>, String> {
     let ffmpeg = sidecar::ffmpeg_path()?;
 
@@ -69,7 +83,13 @@ pub fn build_args(
         "--windows-filenames",
         "--trim-filenames",
         "180",
+        // resume support: keep partial files and skip already-finished items
+        "--continue",
+        "--download-archive",
+        archive,
         "--retries",
+        "10",
+        "--fragment-retries",
         "10",
         "--concurrent-fragments",
         "4",

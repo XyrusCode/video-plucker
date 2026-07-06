@@ -22,6 +22,7 @@ const pluckBtn = document.getElementById("pluck-btn");
 const plucksEl = document.getElementById("plucks");
 
 let store = null;
+let plucksStore = null; // persisted pluck records, for resume after a crash
 let destDir = "";
 let currentMeta = null;
 let nextJobId = 1;
@@ -64,19 +65,35 @@ function fmtDuration(secs) {
     : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/* ---------- settings ---------- */
+/* ---------- settings + persistence ---------- */
 
 async function initSettings() {
   store = await load("settings.json", { autoSave: true });
+  plucksStore = await load("plucks.json", { autoSave: true });
   destDir = (await store.get("destDir")) || (await downloadDir());
   const savedQuality = await store.get("quality");
   if (savedQuality) qualitySelect.value = savedQuality;
+  nextJobId = (await store.get("nextJobId")) || 1;
   renderDestDir();
+  await restoreInterruptedPlucks();
 }
 
 function renderDestDir() {
   destDirEl.textContent = destDir;
   destDirEl.title = destDir;
+}
+
+async function saveRecord(rec) {
+  await plucksStore.set(String(rec.jobId), rec);
+}
+
+async function patchRecord(jobId, patch) {
+  const rec = await plucksStore.get(String(jobId));
+  if (rec) await plucksStore.set(String(jobId), { ...rec, ...patch });
+}
+
+async function removeRecord(jobId) {
+  await plucksStore.delete(String(jobId));
 }
 
 browseBtn.addEventListener("click", async () => {
@@ -150,14 +167,14 @@ function renderMeta(meta) {
   if (meta.kind === "playlist") {
     metaSub.textContent = `Playlist · ${meta.entryCount} videos`;
     metaEntries.innerHTML = "";
-    for (const title of meta.entries) {
+    for (const title of meta.entries.slice(0, 50)) {
       const li = document.createElement("li");
       li.textContent = title;
       metaEntries.appendChild(li);
     }
-    if (meta.entryCount > meta.entries.length) {
+    if (meta.entryCount > 50) {
       const li = document.createElement("li");
-      li.textContent = `… and ${meta.entryCount - meta.entries.length} more`;
+      li.textContent = `… and ${meta.entryCount - 50} more`;
       metaEntries.appendChild(li);
     }
     metaEntries.classList.remove("hidden");
@@ -180,14 +197,23 @@ function renderMeta(meta) {
 
 /* ---------- plucks ---------- */
 
-function createJobCard(jobId, title, isPlaylist, itemCount) {
+// A "params" object fully describes a pluck: { url, quality, destDir,
+// playlistMode, title, itemCount }. `titles` is an optional per-item title list
+// (only available right after analyze, not after a restart).
+function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
+  const isPlaylist = params.playlistMode;
+  const itemCount = params.itemCount || 1;
+
   const card = document.createElement("div");
   card.className = "job-card";
   card.innerHTML = `
     <div class="job-head">
+      <button class="job-expand hidden" title="Show items">▸</button>
       <span class="job-title"></span>
       <button class="job-cancel">Cancel</button>
+      <button class="job-resume hidden">Resume</button>
       <button class="job-open hidden">Open folder</button>
+      <button class="job-dismiss hidden" title="Remove">✕</button>
     </div>
     <div class="job-item-line hidden"></div>
     <div class="bar overall"><div class="bar-fill"></div></div>
@@ -197,17 +223,21 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
       <span class="job-eta"></span>
       <span class="job-status">Starting…</span>
     </div>
+    <ul class="job-items hidden"></ul>
     <div class="job-errors hidden"></div>
   `;
-  card.querySelector(".job-title").textContent = title;
+  card.querySelector(".job-title").textContent = params.title;
   plucksEl.prepend(card);
 
   const job = {
     id: jobId,
+    params,
     isPlaylist,
-    itemCount: itemCount || 1,
-    completed: 0,
+    itemCount,
+    completed,
+    activeIndex: 0,
     lastFile: null,
+    titles,
     card,
     itemLine: card.querySelector(".job-item-line"),
     overallFill: card.querySelector(".bar.overall .bar-fill"),
@@ -217,14 +247,25 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
     etaEl: card.querySelector(".job-eta"),
     statusEl: card.querySelector(".job-status"),
     errorsEl: card.querySelector(".job-errors"),
+    itemsEl: card.querySelector(".job-items"),
     cancelBtn: card.querySelector(".job-cancel"),
+    resumeBtn: card.querySelector(".job-resume"),
     openBtn: card.querySelector(".job-open"),
+    dismissBtn: card.querySelector(".job-dismiss"),
+    expandBtn: card.querySelector(".job-expand"),
+    itemRows: new Map(),
   };
 
   if (isPlaylist) {
     job.itemBar.classList.remove("hidden");
     job.itemLine.classList.remove("hidden");
-    job.itemLine.textContent = `0 / ${job.itemCount}`;
+    job.itemLine.textContent = `${completed} / ${itemCount}`;
+    job.expandBtn.classList.remove("hidden");
+    buildItemRows(job);
+    job.expandBtn.addEventListener("click", () => {
+      const open = job.itemsEl.classList.toggle("hidden") === false;
+      job.expandBtn.textContent = open ? "▾" : "▸";
+    });
   }
 
   job.cancelBtn.addEventListener("click", async () => {
@@ -236,6 +277,12 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
     }
   });
 
+  job.resumeBtn.addEventListener("click", () => resumeJob(job));
+  job.dismissBtn.addEventListener("click", async () => {
+    await removeRecord(jobId);
+    jobs.delete(jobId);
+    job.card.remove();
+  });
   job.openBtn.addEventListener("click", () => {
     if (job.lastFile) revealItemInDir(job.lastFile);
   });
@@ -244,30 +291,137 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
   return job;
 }
 
-pluckBtn.addEventListener("click", async () => {
-  if (!currentMeta) return;
-  const url = urlInput.value.trim();
-  const isPlaylist = currentMeta.kind === "playlist";
-  const jobId = nextJobId++;
-  const job = createJobCard(
-    jobId,
-    currentMeta.title,
-    isPlaylist,
-    currentMeta.entryCount,
-  );
+function buildItemRows(job) {
+  job.itemsEl.innerHTML = "";
+  job.itemRows.clear();
+  for (let i = 1; i <= job.itemCount; i++) {
+    const li = document.createElement("li");
+    li.className = "pl-item";
+    li.dataset.state = "queued";
+    li.innerHTML = `
+      <span class="pl-idx"></span>
+      <span class="pl-title"></span>
+      <span class="pl-state">queued</span>
+      <div class="pl-bar"><div class="pl-fill"></div></div>`;
+    li.querySelector(".pl-idx").textContent = i;
+    li.querySelector(".pl-title").textContent = job.titles[i - 1] || `Item ${i}`;
+    job.itemsEl.appendChild(li);
+    job.itemRows.set(i, {
+      li,
+      title: li.querySelector(".pl-title"),
+      state: li.querySelector(".pl-state"),
+      fill: li.querySelector(".pl-fill"),
+    });
+  }
+  // when resuming, items already recorded in the archive are done
+  for (let i = 1; i <= job.completed; i++) markItem(job, i, "done");
+}
+
+function markItem(job, index, state, title) {
+  const row = job.itemRows.get(index);
+  if (!row) return;
+  if (title) row.title.textContent = title;
+  row.li.dataset.state = state;
+  if (state === "done") {
+    row.state.textContent = "done";
+    row.fill.style.width = "100%";
+  } else if (state === "active") {
+    row.state.textContent = "plucking";
+    row.li.scrollIntoView({ block: "nearest" });
+  } else if (state === "failed") {
+    row.state.textContent = "skipped";
+  }
+}
+
+// Start (or resume) a pluck. On resume we reuse the same jobId so its yt-dlp
+// download archive lines up and finished items are skipped.
+async function beginPluck(job, { fresh }) {
+  job.card.classList.remove("done");
+  job.statusEl.className = "job-status";
+  job.statusEl.textContent = "Starting…";
+  job.cancelBtn.classList.remove("hidden");
+  job.cancelBtn.disabled = false;
+  job.resumeBtn.classList.add("hidden");
+  job.openBtn.classList.add("hidden");
+  job.dismissBtn.classList.add("hidden");
+  job.errorsEl.classList.add("hidden");
+  job.errorsEl.innerHTML = "";
+
+  if (fresh) {
+    await saveRecord({ jobId: job.id, ...job.params, completed: 0, status: "active" });
+  } else {
+    await patchRecord(job.id, { status: "active" });
+  }
+
   try {
     await invoke("start_pluck", {
-      jobId,
-      url,
-      quality: qualitySelect.value,
-      destDir,
-      playlistMode: isPlaylist,
+      jobId: job.id,
+      url: job.params.url,
+      quality: job.params.quality,
+      destDir: job.params.destDir,
+      playlistMode: job.params.playlistMode,
     });
     job.statusEl.textContent = "Plucking…";
   } catch (err) {
     finishJob(job, { ok: false, cancelled: false, error: String(err) });
   }
+}
+
+function resumeJob(job) {
+  job.completed = 0; // the archive is the source of truth; rebuild from events
+  if (job.isPlaylist) buildItemRows(job);
+  beginPluck(job, { fresh: false });
+}
+
+pluckBtn.addEventListener("click", async () => {
+  if (!currentMeta) return;
+  const isPlaylist = currentMeta.kind === "playlist";
+  const params = {
+    url: urlInput.value.trim(),
+    quality: qualitySelect.value,
+    destDir,
+    playlistMode: isPlaylist,
+    title: currentMeta.title,
+    itemCount: isPlaylist ? currentMeta.entryCount : 1,
+  };
+  const jobId = nextJobId++;
+  await store.set("nextJobId", nextJobId);
+  const job = createJobCard(jobId, params, {
+    titles: isPlaylist ? currentMeta.entries : [],
+  });
+  await beginPluck(job, { fresh: true });
 });
+
+// Re-create cards for plucks that were still active when the app last closed.
+async function restoreInterruptedPlucks() {
+  let entries;
+  try {
+    entries = await plucksStore.entries();
+  } catch {
+    return;
+  }
+  for (const [, rec] of entries) {
+    if (!rec || !rec.url) continue;
+    const params = {
+      url: rec.url,
+      quality: rec.quality,
+      destDir: rec.destDir,
+      playlistMode: rec.playlistMode,
+      title: rec.title,
+      itemCount: rec.itemCount,
+    };
+    const job = createJobCard(rec.jobId, params, { completed: rec.completed || 0 });
+    if (rec.jobId >= nextJobId) {
+      nextJobId = rec.jobId + 1;
+      await store.set("nextJobId", nextJobId);
+    }
+    job.cancelBtn.classList.add("hidden");
+    job.resumeBtn.classList.remove("hidden");
+    job.dismissBtn.classList.remove("hidden");
+    job.statusEl.textContent = "Interrupted — resume to continue";
+    job.statusEl.classList.add("cancelled");
+  }
+}
 
 function setOverall(job, itemFraction) {
   const overall = job.isPlaylist
@@ -287,14 +441,19 @@ function finishJob(job, { ok, cancelled, error }) {
     job.statusEl.textContent = "Completed";
     job.statusEl.classList.add("ok");
     if (job.lastFile) job.openBtn.classList.remove("hidden");
+    removeRecord(job.id);
   } else if (cancelled) {
     job.statusEl.textContent = "Cancelled";
     job.statusEl.classList.add("cancelled");
+    removeRecord(job.id);
   } else {
-    job.statusEl.textContent = "Failed";
+    job.statusEl.textContent = "Failed — resume to retry";
     job.statusEl.classList.add("fail");
     if (error) appendError(job, error);
     if (job.lastFile) job.openBtn.classList.remove("hidden");
+    job.resumeBtn.classList.remove("hidden");
+    job.dismissBtn.classList.remove("hidden");
+    patchRecord(job.id, { status: "failed", completed: job.completed });
   }
 }
 
@@ -311,7 +470,13 @@ listen("pluck://item-start", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   if (job.isPlaylist) {
-    if (payload.itemCount > 1) job.itemCount = payload.itemCount;
+    if (payload.itemCount > 1 && payload.itemCount !== job.itemCount) {
+      job.itemCount = payload.itemCount;
+      job.titles = job.titles.slice(0, job.itemCount);
+      buildItemRows(job);
+    }
+    job.activeIndex = payload.itemIndex;
+    markItem(job, payload.itemIndex, "active", payload.title);
     job.itemLine.textContent = `${payload.itemIndex} / ${job.itemCount} — ${payload.title}`;
     job.itemFill.style.width = "0%";
   }
@@ -322,7 +487,12 @@ listen("pluck://progress", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   const fraction = payload.percent != null ? payload.percent / 100 : 0;
-  if (job.isPlaylist) job.itemFill.style.width = `${(fraction * 100).toFixed(1)}%`;
+  if (job.isPlaylist) {
+    job.itemFill.style.width = `${(fraction * 100).toFixed(1)}%`;
+    const idx = payload.itemIndex || job.activeIndex;
+    const row = job.itemRows.get(idx);
+    if (row) row.fill.style.width = `${(fraction * 100).toFixed(1)}%`;
+  }
   setOverall(job, fraction);
   job.speedEl.textContent = fmtSpeed(payload.speed);
   job.etaEl.textContent = payload.eta != null ? `ETA ${fmtEta(payload.eta)}` : "";
@@ -331,15 +501,15 @@ listen("pluck://progress", ({ payload }) => {
 listen("pluck://item-done", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
-  job.completed = job.isPlaylist
-    ? Math.min(job.completed + 1, job.itemCount)
-    : 1;
   job.lastFile = payload.filepath;
   if (job.isPlaylist) {
-    job.itemFill.style.width = "100%";
+    markItem(job, payload.itemIndex, "done");
+    job.completed = Math.min(payload.itemIndex, job.itemCount);
     job.itemLine.textContent = `${job.completed} / ${job.itemCount}`;
     setOverall(job, 0);
+    patchRecord(job.id, { completed: job.completed });
   } else {
+    job.completed = 1;
     setOverall(job, 1);
     job.statusEl.textContent = "Processing…";
   }
@@ -347,7 +517,9 @@ listen("pluck://item-done", ({ payload }) => {
 
 listen("pluck://error", ({ payload }) => {
   const job = jobs.get(payload.jobId);
-  if (job) appendError(job, payload.message);
+  if (!job) return;
+  if (job.isPlaylist && job.activeIndex) markItem(job, job.activeIndex, "failed");
+  appendError(job, payload.message);
 });
 
 listen("pluck://done", ({ payload }) => {
