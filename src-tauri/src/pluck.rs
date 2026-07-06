@@ -129,13 +129,16 @@ pub fn build_args(
         );
     }
 
+    // The trailing `/b` is a fallback to the best available format when no
+    // stream sits at or below the requested height (e.g. an X clip whose
+    // lowest resolution is already above the cap), so a pluck never hard-fails.
     let quality_args: Vec<&str> = match quality {
         "best" => vec!["-f", "bv*+ba/b", "--merge-output-format", "mp4"],
-        "2160" => vec!["-f", "bv*[height<=2160]+ba/b[height<=2160]", "--merge-output-format", "mp4"],
-        "1440" => vec!["-f", "bv*[height<=1440]+ba/b[height<=1440]", "--merge-output-format", "mp4"],
-        "1080" => vec!["-f", "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mp4"],
-        "720" => vec!["-f", "bv*[height<=720]+ba/b[height<=720]", "--merge-output-format", "mp4"],
-        "480" => vec!["-f", "bv*[height<=480]+ba/b[height<=480]", "--merge-output-format", "mp4"],
+        "2160" => vec!["-f", "bv*[height<=2160]+ba/b[height<=2160]/b", "--merge-output-format", "mp4"],
+        "1440" => vec!["-f", "bv*[height<=1440]+ba/b[height<=1440]/b", "--merge-output-format", "mp4"],
+        "1080" => vec!["-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4"],
+        "720" => vec!["-f", "bv*[height<=720]+ba/b[height<=720]/b", "--merge-output-format", "mp4"],
+        "480" => vec!["-f", "bv*[height<=480]+ba/b[height<=480]/b", "--merge-output-format", "mp4"],
         "mp3" => vec!["-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "0"],
         "m4a" => vec!["-f", "ba[ext=m4a]/ba/b", "-x", "--audio-format", "m4a"],
         other => return Err(format!("unknown quality option: {other}")),

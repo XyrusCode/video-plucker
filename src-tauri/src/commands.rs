@@ -21,6 +21,15 @@ pub struct Metadata {
     heights: Vec<u32>,
     entry_count: Option<u64>,
     entries: Vec<String>,
+    source: String, // yt-dlp extractor, e.g. "Youtube", "Twitter"
+}
+
+fn extractor_of(v: &Value) -> String {
+    v.get("extractor_key")
+        .and_then(Value::as_str)
+        .or_else(|| v.get("extractor").and_then(Value::as_str))
+        .unwrap_or("")
+        .to_string()
 }
 
 fn last_thumbnail(v: &Value) -> Option<String> {
@@ -104,6 +113,7 @@ pub async fn fetch_metadata(
             heights: vec![],
             entry_count: Some(count),
             entries: titles,
+            source: extractor_of(&v),
         })
     } else {
         let mut heights: Vec<u32> = v
@@ -135,6 +145,7 @@ pub async fn fetch_metadata(
             heights,
             entry_count: None,
             entries: vec![],
+            source: extractor_of(&v),
         })
     }
 }

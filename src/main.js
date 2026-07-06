@@ -159,13 +159,22 @@ playlistCheck.addEventListener("change", () => {
   currentMeta = null;
 });
 
+function prettySource(source) {
+  if (!source) return "";
+  const s = source.toLowerCase();
+  if (s.includes("youtube")) return "YouTube";
+  if (s.includes("twitter") || s === "x") return "X (Twitter)";
+  return source;
+}
+
 function renderMeta(meta) {
   metaThumb.src = meta.thumbnail || "";
   metaThumb.classList.toggle("hidden", !meta.thumbnail);
   metaTitle.textContent = meta.title;
 
+  const label = prettySource(meta.source);
   if (meta.kind === "playlist") {
-    metaSub.textContent = `Playlist · ${meta.entryCount} videos`;
+    metaSub.textContent = `${label ? label + " playlist" : "Playlist"} · ${meta.entryCount} videos`;
     metaEntries.innerHTML = "";
     for (const title of meta.entries.slice(0, 50)) {
       const li = document.createElement("li");
@@ -179,16 +188,24 @@ function renderMeta(meta) {
     }
     metaEntries.classList.remove("hidden");
   } else {
-    metaSub.textContent = fmtDuration(meta.duration);
+    metaSub.textContent = [label, fmtDuration(meta.duration)]
+      .filter(Boolean)
+      .join(" · ");
     metaEntries.classList.add("hidden");
   }
 
-  // grey out qualities the video doesn't offer (skip for playlists — unknown)
-  const maxHeight = meta.heights?.length ? Math.max(...meta.heights) : null;
+  // Only offer qualities the video actually has: disable tiers above the max
+  // and below the min available height (playlists have unknown heights).
+  const heights = meta.heights || [];
+  const maxHeight = heights.length ? Math.max(...heights) : null;
+  const minHeight = heights.length ? Math.min(...heights) : null;
   for (const opt of qualitySelect.options) {
     const h = parseInt(opt.value, 10);
     opt.disabled =
-      meta.kind === "video" && maxHeight != null && !isNaN(h) && h > maxHeight;
+      meta.kind === "video" &&
+      maxHeight != null &&
+      !isNaN(h) &&
+      (h > maxHeight || h < minHeight);
   }
   if (qualitySelect.selectedOptions[0]?.disabled) qualitySelect.value = "best";
 

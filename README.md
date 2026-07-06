@@ -1,14 +1,16 @@
 # Xyrus' YT Plucker
 
-A desktop app for plucking YouTube videos and playlists, built with
+A desktop app for plucking videos from YouTube and X (Twitter), built with
 [Tauri v2](https://v2.tauri.app) (Rust backend, vanilla HTML/CSS/JS frontend).
 Plucking is powered by bundled [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 and [ffmpeg](https://github.com/BtbN/FFmpeg-Builds) sidecar binaries, so there
-is nothing extra to install.
+is nothing extra to install. (yt-dlp handles many other sites too, so most
+video URLs it supports will work.)
 
 ## Features
 
-- Pluck a single video or an entire playlist from one URL
+- Pluck a single video or an entire playlist from one URL — YouTube videos and
+  playlists, and X (Twitter) videos
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, or audio-only
   (MP3 / M4A)
 - Live progress with percent, speed, and ETA (per-item and overall for
