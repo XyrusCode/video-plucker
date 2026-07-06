@@ -30,7 +30,8 @@ video URLs it supports will work.)
 
 Grab the file for your platform from the [Releases](../../releases) page:
 
-- Windows: `.exe` installer (per-user, no admin required)
+- Windows: `.exe` installer — installs to `Program Files` (prompts for
+  administrator), and creates Start Menu and Desktop shortcuts
 - macOS: `.dmg` (unsigned; on first launch, right-click the app and choose
   Open to get past Gatekeeper)
 - Linux: `.deb` (Debian/Ubuntu)
