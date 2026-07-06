@@ -1,0 +1,26 @@
+[package]
+name = "yt-grab"
+version = "1.0.0"
+description = "YouTube video and playlist downloader"
+authors = ["Prince Shammah"]
+edition = "2021"
+
+[lib]
+name = "yt_grab_lib"
+# Desktop-only: rlib is all the bin needs. The staticlib/cdylib crate-types
+# (for mobile) build a DLL that auto-exports every symbol and blows past PE's
+# 65535-export limit under the GNU/LLD linker.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

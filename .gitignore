@@ -1,0 +1,13 @@
+# Rust / Tauri build output
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/build.log
+
+# pinned sidecar binaries — see README for download commands
+/src-tauri/binaries/*.exe
+
+# Local GNU-toolchain build config + helper scripts (machine-specific;
+# CI and MSVC machines build with defaults)
+/src-tauri/.cargo/
+/dev.ps1
+/build.ps1

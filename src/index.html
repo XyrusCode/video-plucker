@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>yt-grab</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="logo">▶</div>
+        <h1>yt-grab</h1>
+        <span class="tagline">videos &amp; playlists, straight to disk</span>
+      </header>
+
+      <section class="url-row">
+        <input
+          id="url-input"
+          type="text"
+          placeholder="Paste a YouTube video or playlist URL…"
+          spellcheck="false"
+        />
+        <label id="playlist-toggle" class="hidden" title="Download the whole playlist">
+          <input type="checkbox" id="playlist-check" checked />
+          Playlist
+        </label>
+        <button id="analyze-btn">Analyze</button>
+      </section>
+
+      <p id="analyze-error" class="error-text hidden"></p>
+
+      <section id="meta-card" class="hidden">
+        <img id="meta-thumb" alt="" />
+        <div class="meta-info">
+          <h2 id="meta-title"></h2>
+          <p id="meta-sub"></p>
+          <ul id="meta-entries" class="hidden"></ul>
+        </div>
+      </section>
+
+      <section class="options-row">
+        <label class="quality-label">
+          Quality
+          <select id="quality-select">
+            <option value="best">Best available</option>
+            <option value="2160">2160p (4K)</option>
+            <option value="1440">1440p</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+            <option value="mp3">Audio only — MP3</option>
+            <option value="m4a">Audio only — M4A</option>
+          </select>
+        </label>
+        <div class="folder-picker">
+          <span id="dest-dir" title=""></span>
+          <button id="browse-btn">Browse…</button>
+        </div>
+        <button id="download-btn" class="primary" disabled>Download</button>
+      </section>
+
+      <section id="downloads"></section>
+    </main>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

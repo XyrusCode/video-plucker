@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable MSVC)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download sidecar binaries
+        shell: pwsh
+        run: |
+          $bin = "src-tauri/binaries"
+          New-Item -ItemType Directory -Force $bin | Out-Null
+
+          Invoke-WebRequest `
+            -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
+            -OutFile "$bin/yt-dlp-x86_64-pc-windows-msvc.exe"
+
+          Invoke-WebRequest `
+            -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip" `
+            -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
+          Expand-Archive "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg" -Force
+          $ff = (Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+          Copy-Item $ff "$bin/ffmpeg-x86_64-pc-windows-msvc.exe"
+
+          Get-ChildItem $bin
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "yt-grab ${{ github.ref_name }}"
+          releaseBody: |
+            YouTube video and playlist downloader for Windows.
+
+            Download `yt-grab_1.0.0_x64-setup.exe` below and run it. yt-dlp and
+            ffmpeg are bundled; no extra setup required.
+          releaseDraft: false
+          prerelease: false
