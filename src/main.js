@@ -18,8 +18,8 @@ const metaEntries = document.getElementById("meta-entries");
 const qualitySelect = document.getElementById("quality-select");
 const destDirEl = document.getElementById("dest-dir");
 const browseBtn = document.getElementById("browse-btn");
-const downloadBtn = document.getElementById("download-btn");
-const downloadsEl = document.getElementById("downloads");
+const pluckBtn = document.getElementById("pluck-btn");
+const plucksEl = document.getElementById("plucks");
 
 let store = null;
 let destDir = "";
@@ -100,7 +100,7 @@ function isPlaylistUrl(url) {
 
 urlInput.addEventListener("input", () => {
   playlistToggle.classList.toggle("hidden", !isPlaylistUrl(urlInput.value));
-  downloadBtn.disabled = true;
+  pluckBtn.disabled = true;
   currentMeta = null;
 });
 
@@ -115,14 +115,14 @@ async function analyze() {
   analyzeError.classList.add("hidden");
   analyzeBtn.disabled = true;
   analyzeBtn.textContent = "Analyzing…";
-  downloadBtn.disabled = true;
+  pluckBtn.disabled = true;
   try {
     currentMeta = await invoke("fetch_metadata", {
       url,
       playlistMode: playlistMode(),
     });
     renderMeta(currentMeta);
-    downloadBtn.disabled = false;
+    pluckBtn.disabled = false;
   } catch (err) {
     metaCard.classList.add("hidden");
     analyzeError.textContent = String(err);
@@ -138,7 +138,7 @@ urlInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") analyze();
 });
 playlistCheck.addEventListener("change", () => {
-  downloadBtn.disabled = true;
+  pluckBtn.disabled = true;
   currentMeta = null;
 });
 
@@ -178,7 +178,7 @@ function renderMeta(meta) {
   metaCard.classList.remove("hidden");
 }
 
-/* ---------- downloads ---------- */
+/* ---------- plucks ---------- */
 
 function createJobCard(jobId, title, isPlaylist, itemCount) {
   const card = document.createElement("div");
@@ -200,7 +200,7 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
     <div class="job-errors hidden"></div>
   `;
   card.querySelector(".job-title").textContent = title;
-  downloadsEl.prepend(card);
+  plucksEl.prepend(card);
 
   const job = {
     id: jobId,
@@ -230,7 +230,7 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
   job.cancelBtn.addEventListener("click", async () => {
     job.cancelBtn.disabled = true;
     try {
-      await invoke("cancel_download", { jobId });
+      await invoke("cancel_pluck", { jobId });
     } catch {
       job.cancelBtn.disabled = false;
     }
@@ -244,7 +244,7 @@ function createJobCard(jobId, title, isPlaylist, itemCount) {
   return job;
 }
 
-downloadBtn.addEventListener("click", async () => {
+pluckBtn.addEventListener("click", async () => {
   if (!currentMeta) return;
   const url = urlInput.value.trim();
   const isPlaylist = currentMeta.kind === "playlist";
@@ -256,14 +256,14 @@ downloadBtn.addEventListener("click", async () => {
     currentMeta.entryCount,
   );
   try {
-    await invoke("start_download", {
+    await invoke("start_pluck", {
       jobId,
       url,
       quality: qualitySelect.value,
       destDir,
       playlistMode: isPlaylist,
     });
-    job.statusEl.textContent = "Downloading…";
+    job.statusEl.textContent = "Plucking…";
   } catch (err) {
     finishJob(job, { ok: false, cancelled: false, error: String(err) });
   }
@@ -307,7 +307,7 @@ function appendError(job, message) {
 
 /* ---------- backend events ---------- */
 
-listen("download://item-start", ({ payload }) => {
+listen("pluck://item-start", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   if (job.isPlaylist) {
@@ -315,10 +315,10 @@ listen("download://item-start", ({ payload }) => {
     job.itemLine.textContent = `${payload.itemIndex} / ${job.itemCount} — ${payload.title}`;
     job.itemFill.style.width = "0%";
   }
-  job.statusEl.textContent = "Downloading…";
+  job.statusEl.textContent = "Plucking…";
 });
 
-listen("download://progress", ({ payload }) => {
+listen("pluck://progress", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   const fraction = payload.percent != null ? payload.percent / 100 : 0;
@@ -328,7 +328,7 @@ listen("download://progress", ({ payload }) => {
   job.etaEl.textContent = payload.eta != null ? `ETA ${fmtEta(payload.eta)}` : "";
 });
 
-listen("download://item-done", ({ payload }) => {
+listen("pluck://item-done", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   job.completed = job.isPlaylist
@@ -345,12 +345,12 @@ listen("download://item-done", ({ payload }) => {
   }
 });
 
-listen("download://error", ({ payload }) => {
+listen("pluck://error", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (job) appendError(job, payload.message);
 });
 
-listen("download://done", ({ payload }) => {
+listen("pluck://done", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
 });

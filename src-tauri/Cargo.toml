@@ -1,12 +1,12 @@
 [package]
-name = "yt-grab"
-version = "1.0.0"
-description = "YouTube video and playlist downloader"
+name = "yt-plucker"
+version = "1.0.1"
+description = "Xyrus' YT Plucker - pluck YouTube videos and playlists"
 authors = ["Prince Shammah"]
 edition = "2021"
 
 [lib]
-name = "yt_grab_lib"
+name = "yt_plucker_lib"
 # Desktop-only: rlib is all the bin needs. The staticlib/cdylib crate-types
 # (for mobile) build a DLL that auto-exports every symbol and blows past PE's
 # 65535-export limit under the GNU/LLD linker.

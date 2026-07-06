@@ -113,9 +113,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "yt-grab ${{ github.ref_name }}"
+          releaseName: "Xyrus' YT Plucker ${{ github.ref_name }}"
           releaseBody: |
-            YouTube video and playlist downloader.
+            Pluck YouTube videos and playlists.
 
             Download the file for your platform below and install it. yt-dlp and
             ffmpeg are bundled inside the app; no extra setup is required.

@@ -232,8 +232,8 @@ select {
   text-align: left;
 }
 
-/* downloads */
-#downloads {
+/* plucks */
+#plucks {
   margin-top: 22px;
   display: flex;
   flex-direction: column;

@@ -1,22 +1,22 @@
-# yt-grab
+# Xyrus' YT Plucker
 
-A Windows desktop app for downloading YouTube videos and playlists, built with
+A desktop app for plucking YouTube videos and playlists, built with
 [Tauri v2](https://v2.tauri.app) (Rust backend, vanilla HTML/CSS/JS frontend).
-Downloads are powered by bundled [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+Plucking is powered by bundled [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 and [ffmpeg](https://github.com/BtbN/FFmpeg-Builds) sidecar binaries, so there
 is nothing extra to install.
 
 ## Features
 
-- Download a single video or an entire playlist from one URL
+- Pluck a single video or an entire playlist from one URL
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, or audio-only
   (MP3 / M4A)
 - Live progress with percent, speed, and ETA (per-item and overall for
   playlists)
-- Minimize or close to the system tray with downloads still running in the
+- Minimize or close to the system tray with plucks still running in the
   background; restore from the tray, or Show/Quit from its menu
-- Cancel an in-progress download (terminates the whole yt-dlp/ffmpeg tree)
-- Remembers your download folder and quality choice between runs
+- Cancel an in-progress pluck (terminates the whole yt-dlp/ffmpeg tree)
+- Remembers your destination folder and quality choice between runs
 
 ## Install
 
@@ -27,8 +27,20 @@ Grab the file for your platform from the [Releases](../../releases) page:
   Open to get past Gatekeeper)
 - Linux: `.deb` (Debian/Ubuntu)
 
-`yt-dlp` and `ffmpeg` are bundled inside the app, so there is nothing else to
+yt-dlp and ffmpeg are bundled inside the app, so there is nothing else to
 install.
+
+## Usage
+
+1. Paste a YouTube video or playlist URL and click Analyze.
+2. Review the title, thumbnail, and available qualities (playlists show the
+   entry count).
+3. Pick a quality and a destination folder.
+4. Click Pluck. Progress, speed, and ETA update live; use Cancel to stop, or
+   Open folder when a pluck finishes.
+
+Closing or minimizing the window sends it to the system tray and plucks keep
+running. Click the tray icon to restore, or use its Show / Quit menu.
 
 ## Building from source
 
@@ -42,9 +54,9 @@ install.
 
 ### Sidecar binaries
 
-The `yt-dlp.exe` and `ffmpeg.exe` binaries are not committed to the repository.
+The `yt-dlp` and `ffmpeg` binaries are not committed to the repository.
 Download them into `src-tauri/binaries/` with the target-triple filenames Tauri
-expects:
+expects for your platform. On Windows:
 
 ```powershell
 New-Item -ItemType Directory -Force src-tauri\binaries
@@ -63,19 +75,21 @@ Copy-Item (Get-ChildItem "$env:TEMP\ffmpeg" -Recurse -Filter ffmpeg.exe).FullNam
   "src-tauri\binaries\ffmpeg-x86_64-pc-windows-msvc.exe"
 ```
 
-The LGPL ffmpeg build is used deliberately: it covers everything the app needs
-(mp4 muxing, mp3 via libmp3lame) without GPL redistribution obligations.
+The [release workflow](.github/workflows/release.yml) shows the equivalent
+commands for macOS and Linux. The LGPL ffmpeg build is used deliberately: it
+covers everything the app needs (mp4 muxing, mp3 via libmp3lame) without GPL
+redistribution obligations.
 
 ### Develop and build
 
 ```powershell
 tauri dev      # run with a hot-reload window
-tauri build    # produce the NSIS installer under src-tauri\target\release\bundle\nsis
+tauri build    # produce the platform installer under src-tauri\target\release\bundle
 ```
 
 ## Releases
 
-Pushing a `v*` tag (for example `v1.0.0`) triggers the
+Pushing a `v*` tag (for example `v1.0.1`) triggers the
 [release workflow](.github/workflows/release.yml), which builds the app in
 parallel on Windows, macOS, and Linux runners and publishes the installers
 (`.exe`, `.dmg`, `.deb`) to a single GitHub Release. Each runner downloads its
@@ -87,6 +101,6 @@ Rosetta 2. The Linux build targets x86_64.
 
 ## Notes
 
-- YouTube periodically breaks yt-dlp extractors. If downloads start failing,
-  update the bundled `yt-dlp.exe` to the latest release and rebuild.
-- The bundled ffmpeg is a static LGPL build from BtbN's FFmpeg-Builds.
+- YouTube periodically breaks yt-dlp extractors. If plucks start failing,
+  update the bundled `yt-dlp` to the latest release and rebuild.
+- The bundled ffmpeg is a static LGPL build.

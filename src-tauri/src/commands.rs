@@ -8,8 +8,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
-use crate::download::{self, DonePayload, Throttle};
-use crate::{DownloadJob, DownloadState};
+use crate::pluck::{self, DonePayload, Throttle};
+use crate::{PluckJob, PluckState};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,16 +140,16 @@ pub async fn fetch_metadata(
 }
 
 #[tauri::command]
-pub async fn start_download(
+pub async fn start_pluck(
     app: AppHandle,
-    state: State<'_, DownloadState>,
+    state: State<'_, PluckState>,
     job_id: u64,
     url: String,
     quality: String,
     dest_dir: String,
     playlist_mode: bool,
 ) -> Result<(), String> {
-    let args = download::build_args(&url, &quality, &dest_dir, playlist_mode)?;
+    let args = pluck::build_args(&url, &quality, &dest_dir, playlist_mode)?;
 
     let (mut rx, child) = app
         .shell()
@@ -163,7 +163,7 @@ pub async fn start_download(
     let cancelled = Arc::new(AtomicBool::new(false));
     state.0.lock().unwrap().insert(
         job_id,
-        DownloadJob {
+        PluckJob {
             pid: child.pid(),
             cancelled: cancelled.clone(),
         },
@@ -179,13 +179,13 @@ pub async fn start_download(
                 CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
                     for line in text.lines() {
-                        download::handle_line(&app_handle, job_id, line, &mut throttle);
+                        pluck::handle_line(&app_handle, job_id, line, &mut throttle);
                     }
                 }
                 CommandEvent::Terminated(payload) => {
                     let was_cancelled = cancelled.load(Ordering::SeqCst);
                     let _ = app_handle.emit(
-                        "download://done",
+                        "pluck://done",
                         DonePayload {
                             job_id,
                             ok: payload.code == Some(0) && !was_cancelled,
@@ -193,7 +193,7 @@ pub async fn start_download(
                         },
                     );
                     app_handle
-                        .state::<DownloadState>()
+                        .state::<PluckState>()
                         .0
                         .lock()
                         .unwrap()
@@ -208,10 +208,10 @@ pub async fn start_download(
 }
 
 #[tauri::command]
-pub fn cancel_download(state: State<'_, DownloadState>, job_id: u64) -> Result<(), String> {
+pub fn cancel_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), String> {
     let jobs = state.0.lock().unwrap();
-    let job = jobs.get(&job_id).ok_or("download not found")?;
+    let job = jobs.get(&job_id).ok_or("pluck not found")?;
     job.cancelled.store(true, Ordering::SeqCst);
-    download::kill_tree(job.pid);
+    pluck::kill_tree(job.pid);
     Ok(())
 }

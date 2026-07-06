@@ -1,5 +1,5 @@
 mod commands;
-mod download;
+mod pluck;
 mod sidecar;
 mod tray;
 
@@ -9,13 +9,13 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Manager, WindowEvent};
 
-pub struct DownloadJob {
+pub struct PluckJob {
     pub pid: u32,
     pub cancelled: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
-pub struct DownloadState(pub Mutex<HashMap<u64, DownloadJob>>);
+pub struct PluckState(pub Mutex<HashMap<u64, PluckJob>>);
 
 fn show_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -26,12 +26,12 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn kill_all_jobs(app: &AppHandle) {
-    if let Some(state) = app.try_state::<DownloadState>() {
+    if let Some(state) = app.try_state::<PluckState>() {
         let jobs = state.0.lock().unwrap();
         for job in jobs.values() {
             job.cancelled
                 .store(true, std::sync::atomic::Ordering::SeqCst);
-            download::kill_tree(job.pid);
+            pluck::kill_tree(job.pid);
         }
     }
 }
@@ -46,7 +46,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .manage(DownloadState::default())
+        .manage(PluckState::default())
         .setup(|app| {
             tray::create_tray(app.handle())?;
             Ok(())
@@ -67,8 +67,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::fetch_metadata,
-            commands::start_download,
-            commands::cancel_download
+            commands::start_pluck,
+            commands::cancel_pluck
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

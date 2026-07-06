@@ -184,7 +184,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
             return;
         }
         let _ = app.emit(
-            "download://progress",
+            "pluck://progress",
             ProgressPayload {
                 job_id,
                 item_index: index(p[0]),
@@ -201,7 +201,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
             return;
         }
         let _ = app.emit(
-            "download://item-start",
+            "pluck://item-start",
             ItemStartPayload {
                 job_id,
                 // single videos report NA for index/count -> treat as 1/1
@@ -216,7 +216,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
             return;
         }
         let _ = app.emit(
-            "download://item-done",
+            "pluck://item-done",
             ItemDonePayload {
                 job_id,
                 item_index: index(p[0]).unwrap_or(1),
@@ -225,7 +225,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
         );
     } else if line.starts_with("ERROR") {
         let _ = app.emit(
-            "download://error",
+            "pluck://error",
             ErrorPayload {
                 job_id,
                 message: line.to_string(),

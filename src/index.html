@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>yt-grab</title>
+    <title>Xyrus' YT Plucker</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main>
       <header>
         <div class="logo">▶</div>
-        <h1>yt-grab</h1>
-        <span class="tagline">videos &amp; playlists, straight to disk</span>
+        <h1>Xyrus' YT Plucker</h1>
+        <span class="tagline">pluck videos &amp; playlists, straight to disk</span>
       </header>
 
       <section class="url-row">
@@ -21,7 +21,7 @@
           placeholder="Paste a YouTube video or playlist URL…"
           spellcheck="false"
         />
-        <label id="playlist-toggle" class="hidden" title="Download the whole playlist">
+        <label id="playlist-toggle" class="hidden" title="Pluck the whole playlist">
           <input type="checkbox" id="playlist-check" checked />
           Playlist
         </label>
@@ -57,10 +57,10 @@
           <span id="dest-dir" title=""></span>
           <button id="browse-btn">Browse…</button>
         </div>
-        <button id="download-btn" class="primary" disabled>Download</button>
+        <button id="pluck-btn" class="primary" disabled>Pluck</button>
       </section>
 
-      <section id="downloads"></section>
+      <section id="plucks"></section>
     </main>
     <script type="module" src="main.js"></script>
   </body>
