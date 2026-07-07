@@ -7,6 +7,12 @@ and [ffmpeg](https://github.com/BtbN/FFmpeg-Builds) sidecar binaries, so there
 is nothing extra to install. (yt-dlp handles many other sites too, so most
 video URLs it supports will work.)
 
+## Screenshots
+
+![Analyzing a YouTube playlist](docs/playlist.png)
+
+![Pasting a URL to pluck](docs/analyze.png)
+
 ## Features
 
 - Pluck a single video or an entire playlist from one URL — YouTube videos and
