@@ -8,57 +8,135 @@
   </head>
   <body>
     <main>
-      <header>
+      <header class="chrome">
         <div class="logo">▶</div>
         <h1>Xyrus' YT Plucker</h1>
-        <span class="tagline">pluck videos from YouTube &amp; X, straight to disk</span>
+        <span class="tagline">pluck videos from YouTube, X &amp; streaming sites</span>
       </header>
 
-      <section class="url-row">
-        <input
-          id="url-input"
-          type="text"
-          placeholder="Paste a YouTube or X (Twitter) video or playlist URL…"
-          spellcheck="false"
-        />
-        <label id="playlist-toggle" class="hidden" title="Pluck the whole playlist">
-          <input type="checkbox" id="playlist-check" checked />
-          Playlist
-        </label>
-        <button id="analyze-btn">Analyze</button>
-      </section>
+      <nav class="nav-tabs chrome">
+        <button id="nav-download" class="nav-tab active">Downloader</button>
+        <button id="nav-search" class="nav-tab">Search</button>
+      </nav>
 
-      <p id="analyze-error" class="error-text hidden"></p>
+      <!-- ============ Downloader view (paste a URL) ============ -->
+      <div id="view-download">
+        <section class="url-row">
+          <input
+            id="url-input"
+            type="text"
+            placeholder="Paste a YouTube or X (Twitter) video or playlist URL…"
+            spellcheck="false"
+          />
+          <label id="playlist-toggle" class="hidden" title="Pluck the whole playlist">
+            <input type="checkbox" id="playlist-check" checked />
+            Playlist
+          </label>
+          <button id="analyze-btn" class="glossy-btn">Analyze</button>
+        </section>
 
-      <section id="meta-card" class="hidden">
-        <img id="meta-thumb" alt="" />
-        <div class="meta-info">
-          <h2 id="meta-title"></h2>
-          <p id="meta-sub"></p>
-          <ul id="meta-entries" class="hidden"></ul>
-        </div>
-      </section>
+        <p id="analyze-error" class="error-text hidden"></p>
 
-      <section class="options-row">
-        <label class="quality-label">
-          Quality
-          <select id="quality-select">
-            <option value="best">Best available</option>
-            <option value="2160">2160p (4K)</option>
-            <option value="1440">1440p</option>
-            <option value="1080">1080p</option>
-            <option value="720">720p</option>
-            <option value="480">480p</option>
-            <option value="mp3">Audio only — MP3</option>
-            <option value="m4a">Audio only — M4A</option>
-          </select>
-        </label>
-        <div class="folder-picker">
-          <span id="dest-dir" title=""></span>
-          <button id="browse-btn">Browse…</button>
-        </div>
-        <button id="pluck-btn" class="primary" disabled>Pluck</button>
-      </section>
+        <section id="meta-card" class="hidden">
+          <img id="meta-thumb" alt="" />
+          <div class="meta-info">
+            <h2 id="meta-title"></h2>
+            <p id="meta-sub"></p>
+            <ul id="meta-entries" class="hidden"></ul>
+          </div>
+        </section>
+
+        <section class="options-row">
+          <label class="quality-label">
+            Quality
+            <select id="quality-select">
+              <option value="best">Best available</option>
+              <option value="2160">2160p (4K)</option>
+              <option value="1440">1440p</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="mp3">Audio only — MP3</option>
+              <option value="m4a">Audio only — M4A</option>
+            </select>
+          </label>
+          <div class="folder-picker">
+            <span id="dest-dir" title=""></span>
+            <button id="browse-btn" class="glossy-btn">Browse…</button>
+          </div>
+          <button id="pluck-btn" class="glossy-btn primary" disabled>Pluck</button>
+        </section>
+      </div>
+
+      <!-- ============ Search view (streaming sites) ============ -->
+      <div id="view-search" class="hidden">
+        <section class="search-row">
+          <select id="site-select" title="Which site to search"></select>
+          <input
+            id="search-input"
+            type="text"
+            placeholder="Search a show or movie…"
+            spellcheck="false"
+          />
+          <label class="translation-toggle" title="Subtitled or dubbed">
+            <select id="translation-select">
+              <option value="sub">Sub</option>
+              <option value="dub">Dub</option>
+            </select>
+          </label>
+          <button id="search-btn" class="glossy-btn primary">Search</button>
+        </section>
+
+        <p id="search-error" class="error-text hidden"></p>
+
+        <section id="search-results" class="results-grid well hidden"></section>
+
+        <!-- Detail panel for a chosen result -->
+        <section id="result-detail" class="hidden">
+          <div class="detail-head">
+            <img id="detail-poster" alt="" />
+            <div class="detail-info">
+              <h2 id="detail-title"></h2>
+              <p id="detail-sub"></p>
+              <button id="detail-back" class="glossy-btn">← Back to results</button>
+            </div>
+          </div>
+
+          <div class="detail-controls">
+            <label class="quality-label">
+              Quality
+              <select id="stream-quality">
+                <option value="best">Best available</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+                <option value="mp3">Audio only — MP3</option>
+                <option value="m4a">Audio only — M4A</option>
+              </select>
+            </label>
+            <button id="stream-download" class="glossy-btn primary">Download</button>
+          </div>
+
+          <!-- Series-only: season picker + episode batch selection -->
+          <div id="series-picker" class="hidden">
+            <div class="season-row">
+              <label class="quality-label">
+                Season
+                <select id="season-select"></select>
+              </label>
+              <input
+                id="ep-range"
+                type="text"
+                placeholder="Range, e.g. 5-12, 15"
+                spellcheck="false"
+              />
+              <button id="ep-select-all" class="glossy-btn">Select all</button>
+              <span id="ep-count" class="ep-count"></span>
+            </div>
+            <ul id="episode-list" class="job-items well"></ul>
+          </div>
+        </section>
+      </div>
 
       <section id="plucks"></section>
     </main>
