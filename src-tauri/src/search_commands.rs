@@ -20,11 +20,13 @@ use crate::pluck::{self, DonePayload, ErrorPayload, ItemStartPayload, Throttle};
 use crate::{PluckJob, PluckState};
 
 /// One episode the user selected for download. `episode` is the site's own
-/// label; `title` is what the per-item row displays.
+/// label; `episode_id` is its unique key (e.g. page URL) when the label alone
+/// can't locate it; `title` is what the per-item row displays.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EpisodeSel {
     pub episode: String,
+    pub episode_id: Option<String>,
     pub title: Option<String>,
 }
 
@@ -68,6 +70,7 @@ pub async fn resolve_streams(
     ex.resolve_streams(&EpisodeRef {
         site,
         show_id,
+        episode_id: episode.clone(),
         episode,
         translation,
     })
@@ -195,6 +198,10 @@ async fn run_stream_batch(
             site: site.clone(),
             show_id: show_id.clone(),
             episode: ep.episode.clone(),
+            episode_id: ep
+                .episode_id
+                .clone()
+                .unwrap_or_else(|| ep.episode.clone()),
             translation: translation.clone(),
         };
         let opts = match ex.resolve_streams(&eref).await {
@@ -224,6 +231,7 @@ async fn run_stream_batch(
             stream.referer.as_deref(),
             &stream.headers,
             Some(out_name.as_str()),
+            None,
         ) {
             Ok(a) => a,
             Err(e) => {
