@@ -1,16 +1,50 @@
 name: Release
 
+# Releases are driven by the version number: bumping `version` in
+# src-tauri/tauri.conf.json and landing it on main auto-triggers a build and
+# publishes v<version>. The `check` job makes this idempotent — it only
+# releases when no release for that version exists yet, so unrelated edits to
+# the config (or re-runs) never re-release. `workflow_dispatch` allows a manual
+# run for the current version if a release attempt needs to be retried.
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - src-tauri/tauri.conf.json
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      release: ${{ steps.resolve.outputs.release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version and whether it needs releasing
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Release v$version already exists — nothing to do."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "New version v$version — a release will be built."
+          fi
+
   release:
+    needs: check
+    if: needs.check.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -116,10 +150,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Xyrus' YT Plucker ${{ github.ref_name }}"
+          # tauri-action creates the git tag and the GitHub release from this
+          # name; every matrix job passes the same tag, so they publish into one
+          # release. The version comes from the check job, not a pushed tag.
+          tagName: v${{ needs.check.outputs.version }}
+          releaseName: "Xyrus' YT Plucker v${{ needs.check.outputs.version }}"
           releaseBody: |
-            Pluck YouTube videos and playlists.
+            Pluck videos from YouTube, X (Twitter), and streaming sites.
 
             Download the file for your platform below and install it. yt-dlp and
             ffmpeg are bundled inside the app; no extra setup is required.
