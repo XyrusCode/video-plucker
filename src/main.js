@@ -16,6 +16,7 @@ const metaTitle = document.getElementById("meta-title");
 const metaSub = document.getElementById("meta-sub");
 const metaEntries = document.getElementById("meta-entries");
 const qualitySelect = document.getElementById("quality-select");
+const cookiesSelect = document.getElementById("cookies-select");
 const destDirEl = document.getElementById("dest-dir");
 const browseBtn = document.getElementById("browse-btn");
 const pluckBtn = document.getElementById("pluck-btn");
@@ -102,6 +103,8 @@ async function initSettings() {
   destDir = (await store.get("destDir")) || (await downloadDir());
   const savedQuality = await store.get("quality");
   if (savedQuality) qualitySelect.value = savedQuality;
+  const savedCookies = await store.get("cookiesBrowser");
+  if (savedCookies) cookiesSelect.value = savedCookies;
   nextJobId = (await store.get("nextJobId")) || 1;
   renderDestDir();
   await restoreInterruptedPlucks();
@@ -138,6 +141,16 @@ qualitySelect.addEventListener("change", async () => {
   await store.set("quality", qualitySelect.value);
 });
 
+cookiesSelect.addEventListener("change", async () => {
+  await store.set("cookiesBrowser", cookiesSelect.value);
+});
+
+// The browser to pull login cookies from for yt-dlp, or null when "None".
+function cookiesFromBrowser() {
+  const v = cookiesSelect.value;
+  return v && v !== "none" ? v : null;
+}
+
 /* ---------- analyze ---------- */
 
 function isPlaylistUrl(url) {
@@ -166,12 +179,19 @@ async function analyze() {
     currentMeta = await invoke("fetch_metadata", {
       url,
       playlistMode: playlistMode(),
+      cookiesFromBrowser: cookiesFromBrowser(),
     });
     renderMeta(currentMeta);
     pluckBtn.disabled = false;
   } catch (err) {
     metaCard.classList.add("hidden");
-    analyzeError.textContent = String(err);
+    let msg = String(err);
+    // YouTube's bot check is only escapable with browser cookies — point the
+    // user at the control that does it.
+    if (/not a bot|Sign in to confirm/i.test(msg) && !cookiesFromBrowser()) {
+      msg += "\n\nTip: set “YouTube login” to your browser to use its cookies.";
+    }
+    analyzeError.textContent = msg;
     analyzeError.classList.remove("hidden");
   } finally {
     analyzeBtn.disabled = false;
@@ -418,6 +438,7 @@ async function beginPluck(job, { fresh }) {
         quality: job.params.quality,
         destDir: job.params.destDir,
         playlistMode: job.params.playlistMode,
+        cookiesFromBrowser: job.params.cookiesFromBrowser ?? null,
       });
     }
     job.statusEl.textContent = "Plucking…";
@@ -442,6 +463,7 @@ pluckBtn.addEventListener("click", async () => {
     playlistMode: isPlaylist,
     title: currentMeta.title,
     itemCount: isPlaylist ? currentMeta.entryCount : 1,
+    cookiesFromBrowser: cookiesFromBrowser(),
   };
   const jobId = nextJobId++;
   await store.set("nextJobId", nextJobId);
@@ -487,6 +509,7 @@ async function restoreInterruptedPlucks() {
         playlistMode: rec.playlistMode,
         title: rec.title,
         itemCount: rec.itemCount,
+        cookiesFromBrowser: rec.cookiesFromBrowser,
       };
     }
     const job = createJobCard(rec.jobId, params, { completed: rec.completed || 0, titles });
@@ -841,7 +864,13 @@ function selectedEpisodes() {
   const picked = [];
   episodeList.querySelectorAll(".ep-check:checked").forEach((c) => {
     const ep = season.episodes[Number(c.dataset.index)];
-    if (ep) picked.push({ episode: ep.number, title: ep.title || `Episode ${ep.number}` });
+    if (ep) {
+      picked.push({
+        episode: ep.number,
+        episodeId: ep.id,
+        title: ep.title || `Episode ${ep.number}`,
+      });
+    }
   });
   return picked;
 }
@@ -856,10 +885,16 @@ async function downloadSelection() {
   let episodes;
   let itemCount;
   if (isMovie) {
-    // A movie downloads as a single-episode batch. Its episode label is the
-    // one available episode ("1" for AllAnime movies).
+    // A movie downloads as a single-episode batch, using the one available
+    // episode's number/id ("1" for AllAnime movies as a fallback).
     const ep = currentDetail?.seasons?.[0]?.episodes?.[0];
-    episodes = [{ episode: ep ? ep.number : "1", title: currentResult.title }];
+    episodes = [
+      {
+        episode: ep ? ep.number : "1",
+        episodeId: ep ? ep.id : "1",
+        title: currentResult.title,
+      },
+    ];
     itemCount = 1;
   } else {
     episodes = selectedEpisodes();

@@ -284,6 +284,7 @@ select {
   font-size: 0.85rem;
   margin: 9px 2px 0;
   user-select: text;
+  white-space: pre-line;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 

@@ -23,9 +23,11 @@ framework is built to add more sites over time.
 
 - Pluck a single video or an entire playlist from one URL — YouTube videos and
   playlists, and X (Twitter) videos
-- Search streaming sites (starting with AllAnime) from the Search tab: pick a
-  result, choose a quality, and download a movie directly or select a batch of
+- Search streaming sites (AllAnime and LuciferDonghua) from the Search tab: pick
+  a result, choose a quality, and download a movie directly or select a batch of
   a series' episodes (by range like `5-12, 15` and/or per-episode checkboxes)
+- Optional "YouTube login" setting reads cookies from your browser (Chrome,
+  Firefox, Edge, …) to get past YouTube's "confirm you're not a bot" checks
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, or audio-only
   (MP3 / M4A)
 - Live progress with percent, speed, and ETA (per-item and overall for
@@ -133,6 +135,9 @@ Rosetta 2. The Linux build targets x86_64.
 
 - YouTube periodically breaks yt-dlp extractors. If plucks start failing,
   update the bundled `yt-dlp` to the latest release and rebuild.
+- If YouTube shows "Sign in to confirm you're not a bot", set the **YouTube
+  login** dropdown to a browser you're logged into YouTube with — yt-dlp will
+  use that browser's cookies. This is currently the only reliable workaround.
 - Streaming-site extractors depend on each site's private API and can break
   when a site changes. Each site is isolated, so one breaking never affects the
   others or the normal YouTube/X plucking; an unavailable site is shown as such
