@@ -1,11 +1,17 @@
 # Xyrus' YT Plucker
 
-A desktop app for plucking videos from YouTube and X (Twitter), built with
-[Tauri v2](https://v2.tauri.app) (Rust backend, vanilla HTML/CSS/JS frontend).
-Plucking is powered by bundled [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-and [ffmpeg](https://github.com/BtbN/FFmpeg-Builds) sidecar binaries, so there
-is nothing extra to install. (yt-dlp handles many other sites too, so most
-video URLs it supports will work.)
+A desktop app for plucking videos from YouTube, X (Twitter), and streaming
+sites, built with [Tauri v2](https://v2.tauri.app) (Rust backend, vanilla
+HTML/CSS/JS frontend). Plucking is powered by bundled
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) and
+[ffmpeg](https://github.com/BtbN/FFmpeg-Builds) sidecar binaries, so there is
+nothing extra to install. (yt-dlp handles many other sites too, so most video
+URLs it supports will work.)
+
+The **Search** tab goes beyond paste-a-URL: search a streaming catalog, pick a
+result, choose a quality, and download a movie directly or batch-select a
+series' episodes. Streaming search launched with AllAnime; the extractor
+framework is built to add more sites over time.
 
 ## Screenshots
 
@@ -17,6 +23,9 @@ video URLs it supports will work.)
 
 - Pluck a single video or an entire playlist from one URL — YouTube videos and
   playlists, and X (Twitter) videos
+- Search streaming sites (starting with AllAnime) from the Search tab: pick a
+  result, choose a quality, and download a movie directly or select a batch of
+  a series' episodes (by range like `5-12, 15` and/or per-episode checkboxes)
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, or audio-only
   (MP3 / M4A)
 - Live progress with percent, speed, and ETA (per-item and overall for
@@ -53,6 +62,12 @@ install.
 3. Pick a quality and a destination folder.
 4. Click Pluck. Progress, speed, and ETA update live; use Cancel to stop, or
    Open folder when a pluck finishes.
+
+To pluck from a streaming site instead, open the **Search** tab, pick a site,
+and search. Choose a result: a movie downloads straight away, while a series
+lets you pick a season and select episodes (type a range like `5-12, 15`,
+tick individual episodes, or Select all) before downloading. The batch appears
+in the downloads list as one expandable job, just like a playlist.
 
 Closing or minimizing the window sends it to the system tray and plucks keep
 running. Click the tray icon to restore, or use its Show / Quit menu.
@@ -118,4 +133,8 @@ Rosetta 2. The Linux build targets x86_64.
 
 - YouTube periodically breaks yt-dlp extractors. If plucks start failing,
   update the bundled `yt-dlp` to the latest release and rebuild.
+- Streaming-site extractors depend on each site's private API and can break
+  when a site changes. Each site is isolated, so one breaking never affects the
+  others or the normal YouTube/X plucking; an unavailable site is shown as such
+  in the Search tab's site list.
 - The bundled ffmpeg is a static LGPL build.

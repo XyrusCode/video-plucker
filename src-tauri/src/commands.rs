@@ -167,6 +167,9 @@ pub async fn start_pluck(
         &dest_dir,
         playlist_mode,
         &archive.to_string_lossy(),
+        None,
+        &[],
+        None,
     )?;
 
     let (mut rx, child) = app

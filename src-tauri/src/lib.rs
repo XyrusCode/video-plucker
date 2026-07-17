@@ -1,5 +1,7 @@
 mod commands;
+mod extractors;
 mod pluck;
+mod search_commands;
 mod sidecar;
 mod tray;
 
@@ -68,7 +70,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::fetch_metadata,
             commands::start_pluck,
-            commands::cancel_pluck
+            commands::cancel_pluck,
+            search_commands::list_sites,
+            search_commands::search_content,
+            search_commands::get_series_detail,
+            search_commands::resolve_streams,
+            search_commands::start_stream_pluck
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

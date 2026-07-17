@@ -71,6 +71,11 @@ pub fn build_args(
     dest_dir: &str,
     playlist_mode: bool,
     archive: &str,
+    referer: Option<&str>,
+    headers: &[(String, String)],
+    // When set, forces the output filename (used for resolved streams, whose
+    // m3u8 URLs carry no usable title/id metadata for the default template).
+    out_name: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let ffmpeg = sidecar::ffmpeg_path()?;
 
@@ -110,7 +115,15 @@ pub fn build_args(
     .map(|s| s.to_string())
     .collect();
 
-    if playlist_mode {
+    if let Some(name) = out_name {
+        // Resolved-stream job: one URL per yt-dlp run, named by the caller.
+        args.extend(
+            ["--no-playlist", "-o"]
+                .iter()
+                .map(|s| s.to_string())
+                .chain(std::iter::once(format!("{name}.%(ext)s"))),
+        );
+    } else if playlist_mode {
         args.extend(
             [
                 "--yes-playlist",
@@ -144,6 +157,18 @@ pub fn build_args(
         other => return Err(format!("unknown quality option: {other}")),
     };
     args.extend(quality_args.iter().map(|s| s.to_string()));
+
+    // Streaming-site hosts gate their CDN on Referer/Origin and expect the same
+    // User-Agent that resolved the token; without these the m3u8 fetch 403s.
+    // YouTube/X plucks pass none of these and are unaffected.
+    if let Some(r) = referer {
+        args.push("--referer".into());
+        args.push(r.into());
+    }
+    for (k, v) in headers {
+        args.push("--add-header".into());
+        args.push(format!("{k}: {v}"));
+    }
 
     Ok(args)
 }
@@ -255,6 +280,75 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
             },
         );
     }
+}
+
+/// Line handler for resolved-stream plucks. Unlike [`handle_line`], the item
+/// index comes from the batch ordinal we pass in (each episode is its own
+/// single-video yt-dlp run, so yt-dlp's own playlist index is always NA).
+/// yt-dlp's `ITEM|` lines are ignored — the caller emits `item-start` itself
+/// with the real episode title. Returns the output path when a `DONE|` line is
+/// seen, so the caller can remember the last file for "Open folder".
+pub fn handle_stream_line(
+    app: &AppHandle,
+    job_id: u64,
+    item_index: u64,
+    raw: &str,
+    throttle: &mut Throttle,
+) -> Option<String> {
+    let line = raw.trim_end_matches(['\r', '\n']).trim();
+
+    if let Some(rest) = line.strip_prefix("PROG|") {
+        let p: Vec<&str> = rest.split('|').collect();
+        if p.len() < 6 {
+            return None;
+        }
+        let downloaded = num(p[1]);
+        let total = num(p[2]).or_else(|| num(p[3]));
+        let percent = match (downloaded, total) {
+            (Some(d), Some(t)) if t > 0.0 => Some((d / t * 100.0).min(100.0)),
+            _ => None,
+        };
+        let finished = percent.map(|pc| pc >= 100.0).unwrap_or(false);
+        if !finished && !throttle.ready() {
+            return None;
+        }
+        let _ = app.emit(
+            "pluck://progress",
+            ProgressPayload {
+                job_id,
+                item_index: Some(item_index),
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+                percent,
+                speed: num(p[4]),
+                eta: num(p[5]),
+            },
+        );
+    } else if let Some(rest) = line.strip_prefix("DONE|") {
+        let p: Vec<&str> = rest.splitn(2, '|').collect();
+        if p.len() < 2 {
+            return None;
+        }
+        let filepath = p[1].to_string();
+        let _ = app.emit(
+            "pluck://item-done",
+            ItemDonePayload {
+                job_id,
+                item_index,
+                filepath: filepath.clone(),
+            },
+        );
+        return Some(filepath);
+    } else if line.starts_with("ERROR") {
+        let _ = app.emit(
+            "pluck://error",
+            ErrorPayload {
+                job_id,
+                message: line.to_string(),
+            },
+        );
+    }
+    None
 }
 
 /// Kill yt-dlp AND its child ffmpeg: CommandChild::kill() only terminates
