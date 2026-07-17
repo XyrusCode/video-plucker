@@ -21,12 +21,41 @@ const browseBtn = document.getElementById("browse-btn");
 const pluckBtn = document.getElementById("pluck-btn");
 const plucksEl = document.getElementById("plucks");
 
+// nav + search view
+const navDownload = document.getElementById("nav-download");
+const navSearch = document.getElementById("nav-search");
+const viewDownload = document.getElementById("view-download");
+const viewSearch = document.getElementById("view-search");
+const siteSelect = document.getElementById("site-select");
+const searchInput = document.getElementById("search-input");
+const translationSelect = document.getElementById("translation-select");
+const searchBtn = document.getElementById("search-btn");
+const searchError = document.getElementById("search-error");
+const searchResults = document.getElementById("search-results");
+const resultDetail = document.getElementById("result-detail");
+const detailPoster = document.getElementById("detail-poster");
+const detailTitle = document.getElementById("detail-title");
+const detailSub = document.getElementById("detail-sub");
+const detailBack = document.getElementById("detail-back");
+const streamQuality = document.getElementById("stream-quality");
+const streamDownload = document.getElementById("stream-download");
+const seriesPicker = document.getElementById("series-picker");
+const seasonSelect = document.getElementById("season-select");
+const epRange = document.getElementById("ep-range");
+const epSelectAll = document.getElementById("ep-select-all");
+const epCount = document.getElementById("ep-count");
+const episodeList = document.getElementById("episode-list");
+
 let store = null;
 let plucksStore = null; // persisted pluck records, for resume after a crash
 let destDir = "";
 let currentMeta = null;
 let nextJobId = 1;
 const jobs = new Map(); // jobId -> job state + DOM refs
+
+// search state
+let currentResult = null; // the SearchResult being viewed in the detail panel
+let currentDetail = null; // its SeriesDetail (series only)
 
 /* ---------- formatting helpers ---------- */
 
@@ -371,13 +400,26 @@ async function beginPluck(job, { fresh }) {
   }
 
   try {
-    await invoke("start_pluck", {
-      jobId: job.id,
-      url: job.params.url,
-      quality: job.params.quality,
-      destDir: job.params.destDir,
-      playlistMode: job.params.playlistMode,
-    });
+    if (job.params.kind === "stream") {
+      await invoke("start_stream_pluck", {
+        jobId: job.id,
+        site: job.params.site,
+        showId: job.params.showId,
+        title: job.params.title,
+        episodes: job.params.episodes,
+        translation: job.params.translation,
+        quality: job.params.quality,
+        destDir: job.params.destDir,
+      });
+    } else {
+      await invoke("start_pluck", {
+        jobId: job.id,
+        url: job.params.url,
+        quality: job.params.quality,
+        destDir: job.params.destDir,
+        playlistMode: job.params.playlistMode,
+      });
+    }
     job.statusEl.textContent = "Plucking…";
   } catch (err) {
     finishJob(job, { ok: false, cancelled: false, error: String(err) });
@@ -418,16 +460,36 @@ async function restoreInterruptedPlucks() {
     return;
   }
   for (const [, rec] of entries) {
-    if (!rec || !rec.url) continue;
-    const params = {
-      url: rec.url,
-      quality: rec.quality,
-      destDir: rec.destDir,
-      playlistMode: rec.playlistMode,
-      title: rec.title,
-      itemCount: rec.itemCount,
-    };
-    const job = createJobCard(rec.jobId, params, { completed: rec.completed || 0 });
+    if (!rec) continue;
+    let params;
+    let titles = [];
+    if (rec.kind === "stream") {
+      if (!rec.episodes) continue;
+      params = {
+        kind: "stream",
+        site: rec.site,
+        showId: rec.showId,
+        title: rec.title,
+        episodes: rec.episodes,
+        translation: rec.translation,
+        quality: rec.quality,
+        destDir: rec.destDir,
+        playlistMode: rec.playlistMode,
+        itemCount: rec.itemCount,
+      };
+      titles = rec.episodes.map((e) => e.title || `Episode ${e.episode}`);
+    } else {
+      if (!rec.url) continue;
+      params = {
+        url: rec.url,
+        quality: rec.quality,
+        destDir: rec.destDir,
+        playlistMode: rec.playlistMode,
+        title: rec.title,
+        itemCount: rec.itemCount,
+      };
+    }
+    const job = createJobCard(rec.jobId, params, { completed: rec.completed || 0, titles });
     if (rec.jobId >= nextJobId) {
       nextJobId = rec.jobId + 1;
       await store.set("nextJobId", nextJobId);
@@ -544,7 +606,295 @@ listen("pluck://done", ({ payload }) => {
   if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
 });
 
+/* ---------- search view ---------- */
+
+function showView(which) {
+  const search = which === "search";
+  viewSearch.classList.toggle("hidden", !search);
+  viewDownload.classList.toggle("hidden", search);
+  navSearch.classList.toggle("active", search);
+  navDownload.classList.toggle("active", !search);
+}
+
+navDownload.addEventListener("click", () => showView("download"));
+navSearch.addEventListener("click", () => showView("search"));
+
+async function initSearchView() {
+  let sites;
+  try {
+    sites = await invoke("list_sites");
+  } catch {
+    sites = [];
+  }
+  siteSelect.innerHTML = "";
+  for (const site of sites) {
+    const opt = document.createElement("option");
+    opt.value = site.id;
+    opt.textContent = site.available ? site.label : `${site.label} (unavailable)`;
+    opt.disabled = !site.available;
+    siteSelect.appendChild(opt);
+  }
+  // Select the first available site.
+  const firstAvailable = sites.find((s) => s.available);
+  if (firstAvailable) siteSelect.value = firstAvailable.id;
+}
+
+function translation() {
+  return translationSelect.value;
+}
+
+async function runSearch() {
+  const query = searchInput.value.trim();
+  if (!query) return;
+  searchError.classList.add("hidden");
+  resultDetail.classList.add("hidden");
+  searchResults.classList.remove("hidden");
+  searchResults.innerHTML = `<p class="results-status">Searching…</p>`;
+  searchBtn.disabled = true;
+  try {
+    const results = await invoke("search_content", {
+      site: siteSelect.value,
+      query,
+      translation: translation(),
+    });
+    renderResults(results);
+  } catch (err) {
+    searchResults.classList.add("hidden");
+    searchError.textContent = String(err);
+    searchError.classList.remove("hidden");
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+searchBtn.addEventListener("click", runSearch);
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runSearch();
+});
+
+function renderResults(results) {
+  searchResults.innerHTML = "";
+  if (!results.length) {
+    searchResults.innerHTML = `<p class="results-status">No results.</p>`;
+    return;
+  }
+  for (const r of results) {
+    const card = document.createElement("button");
+    card.className = "result-card";
+    card.innerHTML = `
+      <div class="result-poster"></div>
+      <div class="result-meta">
+        <span class="result-title"></span>
+        <span class="badge badge-${r.kind}">${r.kind}</span>
+      </div>`;
+    const poster = card.querySelector(".result-poster");
+    if (r.poster) {
+      poster.style.backgroundImage = `url("${r.poster.replace(/"/g, "%22")}")`;
+    } else {
+      poster.classList.add("no-poster");
+      poster.textContent = "▶";
+    }
+    card.querySelector(".result-title").textContent =
+      r.year ? `${r.title} (${r.year})` : r.title;
+    card.addEventListener("click", () => openDetail(r));
+    searchResults.appendChild(card);
+  }
+}
+
+detailBack.addEventListener("click", () => {
+  resultDetail.classList.add("hidden");
+  searchResults.classList.remove("hidden");
+});
+
+async function openDetail(result) {
+  currentResult = result;
+  currentDetail = null;
+  searchResults.classList.add("hidden");
+  resultDetail.classList.remove("hidden");
+  searchError.classList.add("hidden");
+  seriesPicker.classList.add("hidden");
+
+  detailPoster.src = result.poster || "";
+  detailPoster.classList.toggle("hidden", !result.poster);
+  detailTitle.textContent = result.title;
+  detailSub.textContent = "Loading…";
+  streamDownload.disabled = true;
+  episodeList.innerHTML = `<li class="results-status">Loading episodes…</li>`;
+  epCount.textContent = "";
+
+  // Always load the detail: even a movie needs its real episode id to resolve.
+  try {
+    currentDetail = await invoke("get_series_detail", {
+      site: result.site,
+      id: result.id,
+      translation: translation(),
+    });
+  } catch (err) {
+    episodeList.innerHTML = "";
+    detailSub.textContent = "";
+    searchError.textContent = String(err);
+    searchError.classList.remove("hidden");
+    // A declared movie can still be attempted with a default episode id.
+    streamDownload.disabled = result.kind !== "movie";
+    return;
+  }
+
+  streamDownload.disabled = false;
+  if (currentDetail.kind === "movie") {
+    detailSub.textContent = "Movie";
+    seriesPicker.classList.add("hidden");
+    return;
+  }
+  detailSub.textContent = "Series";
+  seriesPicker.classList.remove("hidden");
+  renderSeasons();
+}
+
+function renderSeasons() {
+  seasonSelect.innerHTML = "";
+  for (const s of currentDetail.seasons) {
+    const opt = document.createElement("option");
+    opt.value = String(s.number);
+    opt.textContent = `Season ${s.number} (${s.episodes.length})`;
+    seasonSelect.appendChild(opt);
+  }
+  seasonSelect.classList.toggle("hidden", currentDetail.seasons.length <= 1);
+  renderEpisodes();
+}
+
+seasonSelect.addEventListener("change", renderEpisodes);
+
+function currentSeason() {
+  const num = parseInt(seasonSelect.value, 10);
+  return (
+    currentDetail.seasons.find((s) => s.number === num) || currentDetail.seasons[0]
+  );
+}
+
+function renderEpisodes() {
+  const season = currentSeason();
+  episodeList.innerHTML = "";
+  season.episodes.forEach((ep, i) => {
+    const li = document.createElement("li");
+    li.className = "pl-item ep-row";
+    li.innerHTML = `
+      <input type="checkbox" class="ep-check" />
+      <span class="pl-idx"></span>
+      <span class="pl-title"></span>`;
+    li.querySelector(".pl-idx").textContent = ep.number;
+    li.querySelector(".pl-title").textContent = ep.title || `Episode ${ep.number}`;
+    const check = li.querySelector(".ep-check");
+    check.dataset.index = String(i);
+    check.addEventListener("change", updateEpCount);
+    episodeList.appendChild(li);
+  });
+  updateEpCount();
+}
+
+// Expand a range string ("5-12, 15") plus ticked boxes into the checked set.
+function parseRange(str, maxIndex) {
+  const set = new Set();
+  for (const part of str.split(",")) {
+    const t = part.trim();
+    if (!t) continue;
+    const m = t.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10);
+      let b = parseInt(m[2], 10);
+      if (a > b) [a, b] = [b, a];
+      for (let n = a; n <= b; n++) if (n >= 1 && n <= maxIndex) set.add(n);
+    } else if (/^\d+$/.test(t)) {
+      const n = parseInt(t, 10);
+      if (n >= 1 && n <= maxIndex) set.add(n);
+    }
+  }
+  return set;
+}
+
+// Apply the range field to the checkboxes (by 1-based episode position).
+epRange.addEventListener("input", () => {
+  const season = currentSeason();
+  if (!season) return;
+  const set = parseRange(epRange.value, season.episodes.length);
+  if (!epRange.value.trim()) return;
+  episodeList.querySelectorAll(".ep-check").forEach((c) => {
+    c.checked = set.has(Number(c.dataset.index) + 1);
+  });
+  updateEpCount();
+});
+
+epSelectAll.addEventListener("click", () => {
+  const boxes = [...episodeList.querySelectorAll(".ep-check")];
+  const allChecked = boxes.every((c) => c.checked);
+  boxes.forEach((c) => (c.checked = !allChecked));
+  epSelectAll.textContent = allChecked ? "Select all" : "Clear all";
+  updateEpCount();
+});
+
+function updateEpCount() {
+  const n = episodeList.querySelectorAll(".ep-check:checked").length;
+  epCount.textContent = n ? `${n} selected` : "";
+}
+
+function selectedEpisodes() {
+  const season = currentSeason();
+  const picked = [];
+  episodeList.querySelectorAll(".ep-check:checked").forEach((c) => {
+    const ep = season.episodes[Number(c.dataset.index)];
+    if (ep) picked.push({ episode: ep.number, title: ep.title || `Episode ${ep.number}` });
+  });
+  return picked;
+}
+
+streamDownload.addEventListener("click", downloadSelection);
+
+async function downloadSelection() {
+  if (!currentResult) return;
+  const isMovie =
+    currentResult.kind === "movie" || seriesPicker.classList.contains("hidden");
+
+  let episodes;
+  let itemCount;
+  if (isMovie) {
+    // A movie downloads as a single-episode batch. Its episode label is the
+    // one available episode ("1" for AllAnime movies).
+    const ep = currentDetail?.seasons?.[0]?.episodes?.[0];
+    episodes = [{ episode: ep ? ep.number : "1", title: currentResult.title }];
+    itemCount = 1;
+  } else {
+    episodes = selectedEpisodes();
+    if (!episodes.length) {
+      searchError.textContent = "Select at least one episode.";
+      searchError.classList.remove("hidden");
+      return;
+    }
+    itemCount = episodes.length;
+  }
+
+  const params = {
+    kind: "stream",
+    site: currentResult.site,
+    showId: currentResult.id,
+    title: currentResult.title,
+    episodes,
+    translation: translation(),
+    quality: streamQuality.value,
+    destDir,
+    playlistMode: itemCount > 1,
+    itemCount,
+  };
+  const jobId = nextJobId++;
+  await store.set("nextJobId", nextJobId);
+  const job = createJobCard(jobId, params, {
+    titles: episodes.map((e) => e.title),
+  });
+  await beginPluck(job, { fresh: true });
+  showView("download");
+}
+
 /* ---------- init ---------- */
+
+initSearchView();
 
 initSettings().catch((err) => {
   analyzeError.textContent = `Failed to load settings: ${err}`;
