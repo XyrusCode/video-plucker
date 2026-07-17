@@ -76,6 +76,9 @@ pub fn build_args(
     // When set, forces the output filename (used for resolved streams, whose
     // m3u8 URLs carry no usable title/id metadata for the default template).
     out_name: Option<&str>,
+    // When set, reads YouTube (etc.) login cookies from this browser to get
+    // past "Sign in to confirm you're not a bot". e.g. "chrome", "firefox".
+    cookies_from_browser: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let ffmpeg = sidecar::ffmpeg_path()?;
 
@@ -168,6 +171,13 @@ pub fn build_args(
     for (k, v) in headers {
         args.push("--add-header".into());
         args.push(format!("{k}: {v}"));
+    }
+
+    if let Some(browser) = cookies_from_browser {
+        if !browser.is_empty() && browser != "none" {
+            args.push("--cookies-from-browser".into());
+            args.push(browser.into());
+        }
     }
 
     Ok(args)

@@ -1,5 +1,35 @@
 //! Deobfuscation helpers shared by the extractors.
 
+use aes::cipher::{KeyIvInit, StreamCipher};
+use base64::Engine;
+use sha2::{Digest, Sha256};
+
+type Aes256Ctr = ctr::Ctr128BE<aes::Aes256>;
+
+/// AllAnime wraps some episode-source responses in a base64, AES-256-CTR
+/// encrypted `tobeparsed` field. Key = SHA256("Xot36i3lK3:v1"); the decoded
+/// blob is `[skip 1][12-byte IV][ciphertext][16-byte GCM tag]` and the CTR
+/// counter is `IV || 0x00000002` (GCM's second counter block — the tag is
+/// dropped, not verified). Returns the decrypted UTF-8 plaintext.
+pub fn allanime_tobeparsed(blob_b64: &str) -> Option<String> {
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(blob_b64.trim())
+        .ok()?;
+    // 1 leading byte + 12-byte IV + >=1 ciphertext byte + 16-byte tag.
+    if raw.len() < 1 + 12 + 16 + 1 {
+        return None;
+    }
+    let mut counter = [0u8; 16];
+    counter[..12].copy_from_slice(&raw[1..13]);
+    counter[12..].copy_from_slice(&[0, 0, 0, 2]);
+
+    let key = Sha256::digest(b"Xot36i3lK3:v1");
+    let mut buf = raw[13..raw.len() - 16].to_vec();
+    let mut cipher = Aes256Ctr::new_from_slices(&key, &counter).ok()?;
+    cipher.apply_keystream(&mut buf);
+    String::from_utf8(buf).ok()
+}
+
 /// AllAnime hides each `sourceUrl` as a hex string XOR'd byte-for-byte with
 /// this key. Decoding yields a provider path like `/apivtwo/clock?id=...`.
 /// Kept as a named constant so a future key change is a one-line fix.
