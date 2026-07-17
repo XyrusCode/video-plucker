@@ -46,6 +46,7 @@ pub async fn fetch_metadata(
     app: AppHandle,
     url: String,
     playlist_mode: bool,
+    cookies_from_browser: Option<String>,
 ) -> Result<Metadata, String> {
     let mut args: Vec<String> = vec!["-J".into(), "--no-warnings".into()];
     if playlist_mode {
@@ -53,6 +54,12 @@ pub async fn fetch_metadata(
         args.extend(["--flat-playlist".into(), "--yes-playlist".into()]);
     } else {
         args.push("--no-playlist".into());
+    }
+    // Read login cookies from a browser to get past YouTube's bot check.
+    if let Some(b) = cookies_from_browser.as_deref() {
+        if !b.is_empty() && b != "none" {
+            args.extend(["--cookies-from-browser".into(), b.into()]);
+        }
     }
     args.push(url);
 
@@ -159,6 +166,7 @@ pub async fn start_pluck(
     quality: String,
     dest_dir: String,
     playlist_mode: bool,
+    cookies_from_browser: Option<String>,
 ) -> Result<(), String> {
     let archive = pluck::archive_path(&app, job_id)?;
     let args = pluck::build_args(
@@ -170,6 +178,7 @@ pub async fn start_pluck(
         None,
         &[],
         None,
+        cookies_from_browser.as_deref(),
     )?;
 
     let (mut rx, child) = app

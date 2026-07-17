@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Firefox UA reused for every extractor request AND handed to yt-dlp, so the
 /// resolved stream is fetched with the same identity that produced the token.
 pub const USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0";
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 
 /// Whether a title is a single film or an episodic series. Drives the UI:
 /// movies download immediately, series show the season/episode picker.
@@ -69,13 +69,17 @@ pub struct SeriesDetail {
 }
 
 /// Identifies one episode to resolve. `show_id`/`episode` come straight from a
-/// [`SearchResult`]/[`Episode`]; `translation` is "sub" or "dub".
+/// [`SearchResult`]/[`Episode`]; `translation` is "sub" or "dub". `episode_id`
+/// is the site's own per-episode key (e.g. the episode page URL) for sites
+/// where the display number alone can't locate the episode; sites keyed by
+/// number (AllAnime) simply mirror `episode` here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EpisodeRef {
     pub site: String,
     pub show_id: String,
     pub episode: String,
+    pub episode_id: String,
     pub translation: String,
 }
 

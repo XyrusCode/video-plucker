@@ -1,28 +1,30 @@
 //! AllAnime extractor.
 //!
-//! AllAnime exposes a GraphQL API (the same one `ani-cli` drives). Queries go
-//! out as GET requests with url-encoded `variables`/`query` params. Episode
-//! sources arrive XOR-obfuscated (see [`super::decode`]) and point at a
-//! provider "clock" endpoint that returns the final `.m3u8`/`.mp4` links.
+//! AllAnime exposes a GraphQL API (the same one `ani-cli` drives). Search and
+//! episode-list are plain JSON via POST; episode sources arrive either plain or
+//! wrapped in an AES-256-CTR-encrypted `tobeparsed` field (see
+//! [`super::decode`]). Each `sourceUrl` is additionally XOR-obfuscated and
+//! points at a provider "clock" endpoint returning the final `.m3u8`/`.mp4`.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use super::decode::allanime_source;
+use super::decode::{allanime_source, allanime_tobeparsed};
 use super::{
     client, Episode, EpisodeRef, ExtractError, Extractor, Kind, SearchOpts, SearchResult, Season,
     SeriesDetail, StreamOption, USER_AGENT,
 };
 
-// These four constants are the whole "contract" with AllAnime. If the site
-// moves, this is where the fix lands.
+// These constants are the whole "contract" with AllAnime; if the site moves,
+// this is where the fix lands. Referer AND Origin must both be youtu-chan.com —
+// the API returns 403 Forbidden otherwise.
 const API: &str = "https://api.allanime.day/api";
-const CLOCK_BASE: &str = "https://api.allanime.day";
-const REFERER: &str = "https://allanime.to";
+const CLOCK_BASE: &str = "https://allanime.day";
+const REFERER: &str = "https://youtu-chan.com";
 
-const SEARCH_GQL: &str = "query($search: SearchInput $limit: Int $page: Int $translationType: VaildTranslationTypeEnumType $countryOrigin: VaildCountryOriginEnumType) { shows(search: $search limit: $limit page: $page translationType: $translationType countryOrigin: $countryOrigin) { edges { _id name thumbnail availableEpisodes airedStart __typename } } }";
-const EPISODES_GQL: &str = "query($showId: String!) { show(_id: $showId) { _id name thumbnail availableEpisodesDetail } }";
-const SOURCES_GQL: &str = "query($showId: String! $translationType: VaildTranslationTypeEnumType! $episodeString: String!) { episode(showId: $showId translationType: $translationType episodeString: $episodeString) { episodeString sourceUrls } }";
+const SEARCH_GQL: &str = "query( $search: SearchInput $limit: Int $page: Int $translationType: VaildTranslationTypeEnumType $countryOrigin: VaildCountryOriginEnumType ) { shows( search: $search limit: $limit page: $page translationType: $translationType countryOrigin: $countryOrigin ) { edges { _id name thumbnail availableEpisodes airedStart __typename } } }";
+const EPISODES_GQL: &str = "query ($showId: String!) { show( _id: $showId ) { _id name thumbnail availableEpisodesDetail } }";
+const SOURCES_GQL: &str = "query ($showId: String!, $translationType: VaildTranslationTypeEnumType!, $episodeString: String!) { episode( showId: $showId translationType: $translationType episodeString: $episodeString ) { episodeString sourceUrls } }";
 
 /// Providers we know how to resolve, best first. Each `sourceUrls` entry names
 /// its provider in `sourceName`; anything not listed here is skipped.
@@ -33,24 +35,25 @@ const PROVIDER_PREFERENCE: &[&str] = &[
 pub struct AllAnime;
 
 impl AllAnime {
-    async fn gql(&self, variables: Value, query: &str) -> Result<Value, ExtractError> {
+    /// POST a GraphQL body and return the raw response text.
+    async fn post(&self, body: Value) -> Result<String, ExtractError> {
         let resp = client()
-            .get(API)
+            .post(API)
             .header("Referer", REFERER)
-            .query(&[
-                ("variables", variables.to_string()),
-                ("query", query.to_string()),
-            ])
+            .header("Origin", REFERER)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
             .send()
             .await?;
         if !resp.status().is_success() {
-            return Err(ExtractError::Network(format!("AllAnime HTTP {}", resp.status())));
+            return Err(ExtractError::Network(format!(
+                "AllAnime HTTP {}",
+                resp.status()
+            )));
         }
-        let body: Value = resp
-            .json()
+        resp.text()
             .await
-            .map_err(|e| ExtractError::Parse(e.to_string()))?;
-        Ok(body)
+            .map_err(|e| ExtractError::Parse(e.to_string()))
     }
 }
 
@@ -68,15 +71,20 @@ impl Extractor for AllAnime {
         query: &str,
         opts: &SearchOpts,
     ) -> Result<Vec<SearchResult>, ExtractError> {
-        let variables = json!({
-            "search": { "allowAdult": false, "allowUnknown": false, "query": query },
-            "limit": 40,
-            "page": 1,
-            "translationType": opts.translation,
-            "countryOrigin": "ALL",
+        let body = json!({
+            "variables": {
+                "search": { "allowAdult": false, "allowUnknown": false, "query": query },
+                "limit": 40,
+                "page": 1,
+                "translationType": opts.translation,
+                "countryOrigin": "ALL",
+            },
+            "query": SEARCH_GQL,
         });
-        let body = self.gql(variables, SEARCH_GQL).await?;
-        let edges = body
+        let text = self.post(body).await?;
+        let v: Value =
+            serde_json::from_str(&text).map_err(|e| ExtractError::Parse(e.to_string()))?;
+        let edges = v
             .pointer("/data/shows/edges")
             .and_then(Value::as_array)
             .ok_or_else(|| ExtractError::Parse("no shows in response".into()))?;
@@ -110,8 +118,11 @@ impl Extractor for AllAnime {
     }
 
     async fn detail(&self, id: &str, opts: &SearchOpts) -> Result<SeriesDetail, ExtractError> {
-        let body = self.gql(json!({ "showId": id }), EPISODES_GQL).await?;
-        let show = body
+        let body = json!({ "variables": { "showId": id }, "query": EPISODES_GQL });
+        let text = self.post(body).await?;
+        let v: Value =
+            serde_json::from_str(&text).map_err(|e| ExtractError::Parse(e.to_string()))?;
+        let show = v
             .pointer("/data/show")
             .ok_or_else(|| ExtractError::Parse("show not found".into()))?;
         let title = show
@@ -123,14 +134,10 @@ impl Extractor for AllAnime {
         let mut eps: Vec<String> = show
             .pointer(&format!("/availableEpisodesDetail/{}", opts.translation))
             .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
 
-        // The API returns episodes newest-first and as strings; sort ascending
+        // The API returns episodes newest-first as strings; sort ascending
         // numerically so the UI lists 1,2,3,… (decimals like "12.5" included).
         eps.sort_by(|a, b| {
             let fa: f64 = a.parse().unwrap_or(f64::MAX);
@@ -158,43 +165,46 @@ impl Extractor for AllAnime {
     }
 
     async fn resolve_streams(&self, ep: &EpisodeRef) -> Result<Vec<StreamOption>, ExtractError> {
-        let variables = json!({
-            "showId": ep.show_id,
-            "translationType": ep.translation,
-            "episodeString": ep.episode,
+        let body = json!({
+            "variables": {
+                "showId": ep.show_id,
+                "translationType": ep.translation,
+                "episodeString": ep.episode,
+            },
+            "query": SOURCES_GQL,
         });
-        let body = self.gql(variables, SOURCES_GQL).await?;
-        let sources = body
-            .pointer("/data/episode/sourceUrls")
-            .and_then(Value::as_array)
-            .ok_or_else(|| ExtractError::Unavailable("no sources for this episode".into()))?;
+        let text = self.post(body).await?;
 
-        // Order candidates by our provider preference, then priority.
-        let mut candidates: Vec<&Value> = sources
-            .iter()
-            .filter(|s| {
-                s.get("sourceName")
-                    .and_then(Value::as_str)
-                    .map(|n| PROVIDER_PREFERENCE.contains(&n))
-                    .unwrap_or(false)
-            })
-            .collect();
-        candidates.sort_by_key(|s| {
-            s.get("sourceName")
-                .and_then(Value::as_str)
-                .and_then(|n| PROVIDER_PREFERENCE.iter().position(|p| *p == n))
+        // Sources are plain JSON or an encrypted `tobeparsed` blob. Decrypt if
+        // present, then pull every {sourceUrl, sourceName} out of the JSON.
+        let tobeparsed = find_tobeparsed(&text).map(str::to_string);
+        let sources_json = match tobeparsed {
+            Some(blob) => allanime_tobeparsed(&blob)
+                .ok_or_else(|| ExtractError::Parse("could not decrypt sources".into()))?,
+            None => text,
+        };
+        let v: Value = serde_json::from_str(&sources_json)
+            .map_err(|e| ExtractError::Parse(e.to_string()))?;
+        let mut sources: Vec<(String, String)> = Vec::new();
+        collect_sources(&v, &mut sources);
+        if sources.is_empty() {
+            return Err(ExtractError::Unavailable(
+                "no sources for this episode".into(),
+            ));
+        }
+
+        // Keep only providers we can resolve, ordered by preference.
+        sources.retain(|(_, name)| PROVIDER_PREFERENCE.contains(&name.as_str()));
+        sources.sort_by_key(|(_, name)| {
+            PROVIDER_PREFERENCE
+                .iter()
+                .position(|p| *p == name.as_str())
                 .unwrap_or(usize::MAX)
         });
 
         let mut options: Vec<StreamOption> = Vec::new();
-        // Try providers in order; gather links from the first few that work so
-        // the quality menu has real choices without fetching every provider.
-        for src in candidates.iter().take(4) {
-            let raw = match src.get("sourceUrl").and_then(Value::as_str) {
-                Some(u) => u,
-                None => continue,
-            };
-            let decoded = match allanime_source(raw) {
+        for (source_url, _) in sources.iter().take(4) {
+            let decoded = match allanime_source(source_url) {
                 Some(d) => d,
                 None => continue,
             };
@@ -211,7 +221,6 @@ impl Extractor for AllAnime {
                 "no playable stream found for this episode".into(),
             ));
         }
-        // Dedupe by URL, keep the highest resolution first.
         options.sort_by(|a, b| b.height.unwrap_or(0).cmp(&a.height.unwrap_or(0)));
         options.dedup_by(|a, b| a.url == b.url);
         Ok(options)
@@ -225,7 +234,7 @@ impl AllAnime {
         let path = if decoded_path.starts_with("http") {
             decoded_path.to_string()
         } else {
-            format!("{CLOCK_BASE}{}", decoded_path.replacen("/clock?", "/clock.json?", 1))
+            format!("{CLOCK_BASE}{}", decoded_path.replacen("/clock", "/clock.json", 1))
         };
         let resp = client().get(&path).header("Referer", REFERER).send().await?;
         if !resp.status().is_success() {
@@ -249,7 +258,8 @@ impl AllAnime {
                 if url.contains('{') {
                     return None;
                 }
-                let is_hls = l.get("hls").and_then(Value::as_bool).unwrap_or(url.contains(".m3u8"));
+                let is_hls =
+                    l.get("hls").and_then(Value::as_bool).unwrap_or(url.contains(".m3u8"));
                 let height = l
                     .get("resolutionStr")
                     .and_then(Value::as_str)
@@ -264,6 +274,42 @@ impl AllAnime {
             })
             .collect();
         Ok(out)
+    }
+}
+
+/// Extract the base64 value of a `"tobeparsed":"..."` field, if present. The
+/// value is base64 (contains no `"`), so scanning to the next quote is safe.
+fn find_tobeparsed(text: &str) -> Option<&str> {
+    let key = "\"tobeparsed\":\"";
+    let start = text.find(key)? + key.len();
+    let rest = &text[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+/// Recursively collect every `{sourceUrl, sourceName}` pair, regardless of how
+/// the (plain or decrypted) response is nested.
+fn collect_sources(v: &Value, out: &mut Vec<(String, String)>) {
+    match v {
+        Value::Object(map) => {
+            if let Some(Value::String(su)) = map.get("sourceUrl") {
+                let name = map
+                    .get("sourceName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                out.push((su.clone(), name));
+            }
+            for child in map.values() {
+                collect_sources(child, out);
+            }
+        }
+        Value::Array(arr) => {
+            for child in arr {
+                collect_sources(child, out);
+            }
+        }
+        _ => {}
     }
 }
 

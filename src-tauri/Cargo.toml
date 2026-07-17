@@ -1,6 +1,6 @@
 [package]
 name = "yt-plucker"
-version = "3.0.0"
+version = "3.1.0"
 description = "Xyrus' YT Plucker - pluck videos from YouTube, X (Twitter) and streaming sites"
 authors = ["Prince Shammah"]
 edition = "2021"
@@ -26,6 +26,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Streaming-site extractors: HTTP client for the site APIs. rustls-tls avoids an
 # OpenSSL build dep so the Windows/GNU + NSIS pipeline stays self-contained.
-# (HTML scraping via `scraper` will be added when luciferdonghua is implemented.)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
 async-trait = "0.1"
+scraper = "0.20"
+# AllAnime now AES-256-CTR-encrypts some episode-source responses ("tobeparsed").
+aes = "0.8"
+ctr = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
