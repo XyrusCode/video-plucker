@@ -232,6 +232,7 @@ async fn run_stream_batch(
             &stream.headers,
             Some(out_name.as_str()),
             None,
+            None,
         ) {
             Ok(a) => a,
             Err(e) => {
