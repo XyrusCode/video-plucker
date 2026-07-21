@@ -145,10 +145,10 @@ cookiesSelect.addEventListener("change", async () => {
   await store.set("cookiesBrowser", cookiesSelect.value);
 });
 
-// The browser to pull login cookies from for yt-dlp, or null when "None".
 function cookiesFromBrowser() {
   const v = cookiesSelect.value;
-  return v && v !== "none" ? v : null;
+  if (!v || v === "none") return null;
+  return v;
 }
 
 /* ---------- analyze ---------- */
