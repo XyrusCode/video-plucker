@@ -6,6 +6,17 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::sidecar;
 
+/// Directory where platform-specific cookie files are stored.
+pub fn app_cookies_dir(app: &AppHandle) -> PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("yt-plucker"))
+        .join("cookies");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 /// Per-pluck yt-dlp download archive, kept in the app data dir and keyed by
 /// job id. yt-dlp records finished items here so a resumed pluck skips them.
 pub fn archive_path(app: &AppHandle, job_id: u64) -> Result<PathBuf, String> {
@@ -79,6 +90,9 @@ pub fn build_args(
     // When set, reads YouTube (etc.) login cookies from this browser to get
     // past "Sign in to confirm you're not a bot". e.g. "chrome", "firefox".
     cookies_from_browser: Option<&str>,
+    // Path to a Netscape-format cookies.txt file for platforms that require
+    // login (Twitter/X, YouTube, TikTok).
+    cookies_file: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let ffmpeg = sidecar::ffmpeg_path()?;
 
@@ -177,6 +191,14 @@ pub fn build_args(
         if !browser.is_empty() && browser != "none" {
             args.push("--cookies-from-browser".into());
             args.push(browser.into());
+        }
+    }
+
+    // Platform-specific cookies.txt file (imported by the user).
+    if let Some(cf) = cookies_file {
+        if !cf.is_empty() {
+            args.push("--cookies".into());
+            args.push(cf.into());
         }
     }
 

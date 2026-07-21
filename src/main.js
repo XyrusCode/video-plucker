@@ -22,6 +22,13 @@ const browseBtn = document.getElementById("browse-btn");
 const pluckBtn = document.getElementById("pluck-btn");
 const plucksEl = document.getElementById("plucks");
 
+// Cookie manager elements
+const cookieStatuses = {
+  twitter: { status: document.getElementById("cookie-twitter-status"), clear: document.getElementById("cookie-twitter-clear"), btn: document.getElementById("cookie-twitter") },
+  youtube: { status: document.getElementById("cookie-youtube-status"), clear: document.getElementById("cookie-youtube-clear"), btn: document.getElementById("cookie-youtube") },
+  tiktok: { status: document.getElementById("cookie-tiktok-status"), clear: document.getElementById("cookie-tiktok-clear"), btn: document.getElementById("cookie-tiktok") },
+};
+
 // nav + search view
 const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
@@ -108,6 +115,7 @@ async function initSettings() {
   nextJobId = (await store.get("nextJobId")) || 1;
   renderDestDir();
   await restoreInterruptedPlucks();
+  await refreshCookieStatus();
 }
 
 function renderDestDir() {
@@ -151,6 +159,71 @@ function cookiesFromBrowser() {
   return v;
 }
 
+/* ---------- cookie manager ---------- */
+
+async function refreshCookieStatus() {
+  let status;
+  try {
+    status = await invoke("get_platform_cookies_status");
+  } catch {
+    return;
+  }
+  for (const [platform, loaded] of Object.entries(status)) {
+    const el = cookieStatuses[platform];
+    if (!el) continue;
+    if (loaded) {
+      el.status.textContent = "Loaded";
+      el.status.className = "cookie-status loaded";
+      el.clear.classList.remove("hidden");
+    } else {
+      el.status.textContent = "Not loaded";
+      el.status.className = "cookie-status not-loaded";
+      el.clear.classList.add("hidden");
+    }
+  }
+}
+
+async function importCookies(platform) {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "Cookies", extensions: ["txt"] }],
+  });
+  if (!selected) return;
+  try {
+    await invoke("import_platform_cookies", { platform, sourcePath: selected });
+    await refreshCookieStatus();
+  } catch (err) {
+    analyzeError.textContent = `Failed to import ${platform} cookies: ${err}`;
+    analyzeError.classList.remove("hidden");
+  }
+}
+
+async function clearCookies(platform) {
+  try {
+    await invoke("clear_platform_cookies", { platform });
+    await refreshCookieStatus();
+  } catch (err) {
+    analyzeError.textContent = `Failed to clear ${platform} cookies: ${err}`;
+    analyzeError.classList.remove("hidden");
+  }
+}
+
+// Wire up cookie import/clear buttons
+for (const [platform, el] of Object.entries(cookieStatuses)) {
+  el.btn.addEventListener("click", () => importCookies(platform));
+  el.clear.addEventListener("click", () => clearCookies(platform));
+}
+
+/* ---------- URL helpers ---------- */
+
+function cleanPlatformUrl(url) {
+  // Strip tracking query params from TikTok video URLs.
+  if (/tiktok\.com\/.*\/video\//i.test(url)) {
+    return url.split("?")[0];
+  }
+  return url;
+}
+
 /* ---------- analyze ---------- */
 
 function isPlaylistUrl(url) {
@@ -168,7 +241,9 @@ function playlistMode() {
 }
 
 async function analyze() {
-  const url = urlInput.value.trim();
+  const raw = urlInput.value.trim();
+  const url = cleanPlatformUrl(raw);
+  if (url !== raw) urlInput.value = url;
   if (!url) return;
 
   analyzeError.classList.add("hidden");
@@ -457,7 +532,7 @@ pluckBtn.addEventListener("click", async () => {
   if (!currentMeta) return;
   const isPlaylist = currentMeta.kind === "playlist";
   const params = {
-    url: urlInput.value.trim(),
+    url: cleanPlatformUrl(urlInput.value.trim()),
     quality: qualitySelect.value,
     destDir,
     playlistMode: isPlaylist,

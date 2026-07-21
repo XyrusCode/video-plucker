@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,6 +42,62 @@ fn last_thumbnail(v: &Value) -> Option<String> {
         .map(String::from)
 }
 
+/// Detect which platform a URL belongs to for cookie file selection.
+fn detect_platform(url: &str) -> Option<&'static str> {
+    let lower = url.to_lowercase();
+    if lower.contains("twitter.com") || lower.contains("x.com") {
+        Some("twitter")
+    } else if lower.contains("youtube.com") || lower.contains("youtu.be") {
+        Some("youtube")
+    } else if lower.contains("tiktok.com") {
+        Some("tiktok")
+    } else {
+        None
+    }
+}
+
+/// Resolve the path to a platform-specific cookies.txt if one exists.
+fn platform_cookies_file(app: &AppHandle, url: &str) -> Option<String> {
+    let platform = detect_platform(url)?;
+    let path = pluck::app_cookies_dir(app).join(format!("{platform}.txt"));
+    if path.exists() {
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+pub async fn import_platform_cookies(
+    app: AppHandle,
+    platform: String,
+    source_path: String,
+) -> Result<String, String> {
+    let dest = pluck::app_cookies_dir(&app).join(format!("{platform}.txt"));
+    std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::copy(&source_path, &dest).map_err(|e| format!("failed to copy cookies: {e}"))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn clear_platform_cookies(app: AppHandle, platform: String) -> Result<(), String> {
+    let path = pluck::app_cookies_dir(&app).join(format!("{platform}.txt"));
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_platform_cookies_status(app: AppHandle) -> HashMap<String, bool> {
+    let dir = pluck::app_cookies_dir(&app);
+    let mut map = HashMap::new();
+    for platform in &["twitter", "youtube", "tiktok"] {
+        map.insert(platform.to_string(), dir.join(format!("{platform}.txt")).exists());
+    }
+    map
+}
+
 #[tauri::command]
 pub async fn fetch_metadata(
     app: AppHandle,
@@ -60,6 +117,10 @@ pub async fn fetch_metadata(
         if !b.is_empty() && b != "none" {
             args.extend(["--cookies-from-browser".into(), b.into()]);
         }
+    }
+    // Auto-apply platform-specific cookies.txt if available.
+    if let Some(cf) = platform_cookies_file(&app, &url) {
+        args.extend(["--cookies".into(), cf]);
     }
     args.push(url);
 
@@ -169,6 +230,7 @@ pub async fn start_pluck(
     cookies_from_browser: Option<String>,
 ) -> Result<(), String> {
     let archive = pluck::archive_path(&app, job_id)?;
+    let cookies_file = platform_cookies_file(&app, &url);
     let args = pluck::build_args(
         &url,
         &quality,
@@ -179,6 +241,7 @@ pub async fn start_pluck(
         &[],
         None,
         cookies_from_browser.as_deref(),
+        cookies_file.as_deref(),
     )?;
 
     let (mut rx, child) = app

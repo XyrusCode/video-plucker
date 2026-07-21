@@ -586,6 +586,79 @@ select {
   cursor: pointer;
 }
 
+/* ---------- cookie manager ---------- */
+.cookie-manager {
+  margin-top: 14px;
+  padding: 8px 12px 10px;
+  border-radius: 8px;
+}
+
+.cookie-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cookie-manager-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.cookie-manager-hint {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin-left: auto;
+}
+
+.cookie-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cookie-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cookie-label {
+  width: 100px;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.cookie-import {
+  padding: 4px 11px;
+  font-size: 0.78rem;
+}
+
+.cookie-clear {
+  padding: 4px 9px;
+  font-size: 0.75rem;
+  color: #ff7b7b;
+}
+
+.cookie-status {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cookie-status.loaded {
+  color: var(--candy-green-hi);
+  text-shadow: 0 0 6px rgba(102, 229, 140, 0.4);
+}
+
+.cookie-status.not-loaded {
+  color: var(--text-dim);
+}
+
 /* ---------- plucks list ---------- */
 #plucks {
   margin-top: 20px;
