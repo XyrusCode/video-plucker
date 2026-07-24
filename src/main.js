@@ -21,6 +21,7 @@ const destDirEl = document.getElementById("dest-dir");
 const browseBtn = document.getElementById("browse-btn");
 const pluckBtn = document.getElementById("pluck-btn");
 const plucksEl = document.getElementById("plucks");
+const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 // Cookie manager elements
 const cookieStatuses = {
@@ -640,6 +641,25 @@ function appendError(job, message) {
   line.textContent = message;
   job.errorsEl.appendChild(line);
 }
+
+clearHistoryBtn.addEventListener("click", async () => {
+  const toRemove = [];
+  for (const [id, job] of jobs) {
+    const status = job.card.querySelector(".job-status");
+    const isFinished = status?.classList.contains("ok") || status?.classList.contains("cancelled") || status?.classList.contains("fail");
+    if (isFinished) {
+      toRemove.push(id);
+    }
+  }
+  for (const id of toRemove) {
+    const job = jobs.get(id);
+    if (job) {
+      await removeRecord(id);
+      job.card.remove();
+      jobs.delete(id);
+    }
+  }
+});
 
 /* ---------- backend events ---------- */
 
