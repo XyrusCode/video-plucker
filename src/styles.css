@@ -660,8 +660,32 @@ select {
 }
 
 /* ---------- plucks list ---------- */
-#plucks {
+#plucks-head {
+  display: flex;
+  align-items: center;
   margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.plucks-head-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.clear-history {
+  margin-left: auto;
+  padding: 4px 11px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.clear-history:hover {
+  color: var(--accent);
+}
+
+#plucks {
   display: flex;
   flex-direction: column;
   gap: 12px;
