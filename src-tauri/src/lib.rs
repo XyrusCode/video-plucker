@@ -99,7 +99,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             show_main_window(app);
-            handle_deep_link_argv(app, argv);
+            handle_deep_link_argv(app, &argv);
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
