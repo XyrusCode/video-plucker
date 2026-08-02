@@ -1024,23 +1024,14 @@ async function downloadSelection() {
 
 /* ---------- deep-link handler ---------- */
 
-listen("deep-link-received", async (event) => {
-  const { action, url, quality } = event.payload;
-
-  // Navigate to downloader view
+async function handleDeepLink({ action, url, quality }) {
   showView("download");
-
-  // Populate the URL input
   urlInput.value = url;
 
   if (action === "analyze") {
-    // Auto-trigger analysis
     await analyze();
   } else if (action === "pluck") {
-    // Set quality if specified
     if (quality) qualitySelect.value = quality;
-
-    // Run analyze first to get metadata, then auto-pluck
     if (!currentMeta) {
       await analyze();
     }
@@ -1048,13 +1039,24 @@ listen("deep-link-received", async (event) => {
       pluckBtn.click();
     }
   }
+}
+
+listen("deep-link-received", async (event) => {
+  await handleDeepLink(event.payload);
 });
 
 /* ---------- init ---------- */
 
 initSearchView();
 
-initSettings().catch((err) => {
-  analyzeError.textContent = `Failed to load settings: ${err}`;
-  analyzeError.classList.remove("hidden");
-});
+initSettings()
+  .then(() => {
+    // Check for a deep-link that arrived before the frontend was ready.
+    return invoke("consume_deep_link").then((payload) => {
+      if (payload) handleDeepLink(payload);
+    });
+  })
+  .catch((err) => {
+    analyzeError.textContent = `Failed to load settings: ${err}`;
+    analyzeError.classList.remove("hidden");
+  });

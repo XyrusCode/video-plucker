@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use url::Url;
 
 pub struct PluckJob {
@@ -21,7 +21,7 @@ pub struct PluckJob {
 #[derive(Default)]
 pub struct PluckState(pub Mutex<HashMap<u64, PluckJob>>);
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct DeepLinkPayload {
     action: String,
     url: String,
@@ -29,8 +29,14 @@ struct DeepLinkPayload {
     quality: Option<String>,
 }
 
+/// Stores a deep-link that arrived before the frontend was ready to listen.
+/// The frontend calls `consume_deep_link` on startup to pick it up.
+#[derive(Default)]
+struct PendingDeepLink(Mutex<Option<DeepLinkPayload>>);
+
 /// Parse argv for yt-plucker:// deep-link URLs and emit a `deep-link-received`
-/// event so the frontend can act on them.
+/// event so the frontend can act on them.  If the frontend hasn't registered a
+/// listener yet (startup race), the payload is stored in PendingDeepLink state.
 fn handle_deep_link_argv(app: &AppHandle, argv: &[String]) {
     for arg in argv {
         let trimmed = arg.trim();
@@ -69,10 +75,19 @@ fn handle_deep_link_argv(app: &AppHandle, argv: &[String]) {
 
         show_main_window(app);
 
-        if let Err(e) = app.emit("deep-link-received", payload) {
-            eprintln!("Failed to emit deep-link-received event: {e}");
+        // Try emitting — if the frontend hasn't loaded yet the event is
+        // silently dropped.  Store a copy in PendingDeepLink as a fallback.
+        let _ = app.emit("deep-link-received", payload.clone());
+
+        if let Some(state) = app.try_state::<PendingDeepLink>() {
+            *state.0.lock().unwrap() = Some(payload);
         }
     }
+}
+
+#[tauri::command]
+fn consume_deep_link(state: State<PendingDeepLink>) -> Option<DeepLinkPayload> {
+    state.0.lock().unwrap().take()
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -107,6 +122,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(PluckState::default())
+        .manage(PendingDeepLink::default())
         .setup(|app| {
             tray::create_tray(app.handle())?;
             Ok(())
@@ -136,7 +152,8 @@ pub fn run() {
             search_commands::search_content,
             search_commands::get_series_detail,
             search_commands::resolve_streams,
-            search_commands::start_stream_pluck
+            search_commands::start_stream_pluck,
+            consume_deep_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
