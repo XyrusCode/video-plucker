@@ -1022,6 +1022,34 @@ async function downloadSelection() {
   showView("download");
 }
 
+/* ---------- deep-link handler ---------- */
+
+listen("deep-link-received", async (event) => {
+  const { action, url, quality } = event.payload;
+
+  // Navigate to downloader view
+  showView("download");
+
+  // Populate the URL input
+  urlInput.value = url;
+
+  if (action === "analyze") {
+    // Auto-trigger analysis
+    await analyze();
+  } else if (action === "pluck") {
+    // Set quality if specified
+    if (quality) qualitySelect.value = quality;
+
+    // Run analyze first to get metadata, then auto-pluck
+    if (!currentMeta) {
+      await analyze();
+    }
+    if (currentMeta) {
+      pluckBtn.click();
+    }
+  }
+});
+
 /* ---------- init ---------- */
 
 initSearchView();
