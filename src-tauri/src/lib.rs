@@ -1,5 +1,6 @@
 mod commands;
 mod extractors;
+mod pairing;
 mod pluck;
 mod search_commands;
 mod sidecar;
@@ -51,6 +52,10 @@ pub fn run() {
         .manage(PluckState::default())
         .setup(|app| {
             tray::create_tray(app.handle())?;
+            // Start the pairing HTTP server so the browser extension can send
+            // URLs directly to the desktop app.
+            let server = pairing::PairingServer::start(app.handle().clone());
+            app.manage(server);
             Ok(())
         })
         .on_window_event(|window, event| match event {

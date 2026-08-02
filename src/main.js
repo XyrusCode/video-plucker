@@ -724,6 +724,40 @@ listen("pluck://done", ({ payload }) => {
   if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
 });
 
+/* ---------- browser extension pairing ---------- */
+
+// Show a brief toast in the header area.
+function showPairToast(message) {
+  const existing = document.getElementById("pair-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("span");
+  toast.id = "pair-toast";
+  toast.textContent = message;
+  toast.style.cssText =
+    "position:fixed;top:10px;right:10px;background:var(--accent,#e94560);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;animation:pairFadeIn .3s ease";
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity .3s";
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+listen("pair://url-received", ({ payload }) => {
+  if (!payload || !payload.url) return;
+  // Fill the URL input and switch to the downloader view.
+  urlInput.value = payload.url;
+  showView("download");
+  // If it's a playlist URL, make sure the playlist toggle is visible and checked.
+  if (isPlaylistUrl(payload.url)) {
+    playlistToggle.classList.remove("hidden");
+    playlistCheck.checked = true;
+  }
+  showPairToast("📨 URL received from browser");
+  // Auto-analyze the received URL.
+  analyze();
+});
+
 /* ---------- search view ---------- */
 
 function showView(which) {
