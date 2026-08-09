@@ -49,14 +49,21 @@ fn handle_deep_link_argv(app: &AppHandle, argv: &[String]) {
             Err(_) => continue,
         };
 
-        // /analyze?url=...  or  /pluck?url=...&quality=...
-        let path = parsed.path().trim_start_matches('/');
-        if path.is_empty() {
+        // Protocol URLs are yt-plucker://analyze?url=...&quality=... (action
+        // in the authority) or yt-plucker:///analyze?... (action in the path);
+        // accept both. The frontend ignores actions it doesn't know.
+        let path_action = parsed.path().trim_start_matches('/');
+        let action = if path_action.is_empty() {
+            parsed.host_str().unwrap_or("")
+        } else {
+            path_action
+        };
+        if action.is_empty() {
             continue;
         }
 
         let mut payload = DeepLinkPayload {
-            action: path.to_string(),
+            action: action.to_string(),
             url: String::new(),
             quality: None,
         };
@@ -125,6 +132,10 @@ pub fn run() {
         .manage(PendingDeepLink::default())
         .setup(|app| {
             tray::create_tray(app.handle())?;
+            // A cold launch opened by the yt-plucker:// protocol carries the
+            // URL in its own argv; the single-instance callback below only
+            // fires for a second instance, so scan here too.
+            handle_deep_link_argv(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -145,9 +156,9 @@ pub fn run() {
             commands::fetch_metadata,
             commands::start_pluck,
             commands::cancel_pluck,
-            commands::import_platform_cookies,
-            commands::clear_platform_cookies,
-            commands::get_platform_cookies_status,
+            commands::import_cookie,
+            commands::delete_cookie,
+            commands::list_cookies,
             search_commands::list_sites,
             search_commands::search_content,
             search_commands::get_series_detail,
