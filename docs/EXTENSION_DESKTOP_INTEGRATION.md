@@ -142,7 +142,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 | Extension | Desktop | Protocol |
 |-----------|---------|----------|
-| 1.1.0     | 4.1.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
+| 1.1.0     | 4.2.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
 
 ## Key Files
 
@@ -157,4 +157,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.1.0 (PendingDeepLink race-condition fix)*
+*Last updated: v4.2.0 (deep-link action fix: accept the action in the URL host)*

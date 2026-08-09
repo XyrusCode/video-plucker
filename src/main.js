@@ -24,11 +24,9 @@ const plucksEl = document.getElementById("plucks");
 const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 // Cookie manager elements
-const cookieStatuses = {
-  twitter: { status: document.getElementById("cookie-twitter-status"), clear: document.getElementById("cookie-twitter-clear"), btn: document.getElementById("cookie-twitter") },
-  youtube: { status: document.getElementById("cookie-youtube-status"), clear: document.getElementById("cookie-youtube-clear"), btn: document.getElementById("cookie-youtube") },
-  tiktok: { status: document.getElementById("cookie-tiktok-status"), clear: document.getElementById("cookie-tiktok-clear"), btn: document.getElementById("cookie-tiktok") },
-};
+const cookieBody = document.getElementById("cookie-body");
+const cookieNameInput = document.getElementById("cookie-name-input");
+const cookieAddBtn = document.getElementById("cookie-add-btn");
 
 // nav + search view
 const navDownload = document.getElementById("nav-download");
@@ -116,7 +114,7 @@ async function initSettings() {
   nextJobId = (await store.get("nextJobId")) || 1;
   renderDestDir();
   await restoreInterruptedPlucks();
-  await refreshCookieStatus();
+  await renderCookies();
 }
 
 function renderDestDir() {
@@ -162,58 +160,74 @@ function cookiesFromBrowser() {
 
 /* ---------- cookie manager ---------- */
 
-async function refreshCookieStatus() {
-  let status;
+async function renderCookies() {
+  let entries;
   try {
-    status = await invoke("get_platform_cookies_status");
+    entries = await invoke("list_cookies");
   } catch {
     return;
   }
-  for (const [platform, loaded] of Object.entries(status)) {
-    const el = cookieStatuses[platform];
-    if (!el) continue;
-    if (loaded) {
-      el.status.textContent = "Loaded";
-      el.status.className = "cookie-status loaded";
-      el.clear.classList.remove("hidden");
-    } else {
-      el.status.textContent = "Not loaded";
-      el.status.className = "cookie-status not-loaded";
-      el.clear.classList.add("hidden");
-    }
+  cookieBody.querySelectorAll(".cookie-row").forEach((r) => r.remove());
+  for (const { name } of entries) {
+    const row = document.createElement("div");
+    row.className = "cookie-row";
+    const label = document.createElement("span");
+    label.className = "cookie-label";
+    label.title = `${name} cookies — matches URLs containing "${name}"`;
+    label.textContent = name;
+    const status = document.createElement("span");
+    status.className = "cookie-status loaded";
+    status.textContent = "Saved";
+    const clear = document.createElement("button");
+    clear.className = "glossy-btn cookie-clear";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", async () => {
+      try {
+        await invoke("delete_cookie", { name });
+      } catch (err) {
+        analyzeError.textContent = `Failed to clear ${name} cookies: ${err}`;
+        analyzeError.classList.remove("hidden");
+      }
+      await renderCookies();
+    });
+    row.append(label, status, clear);
+    cookieBody.appendChild(row);
+  }
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "cookie-empty";
+    empty.textContent = "No cookie sets saved yet — add one above.";
+    cookieBody.appendChild(empty);
   }
 }
 
-async function importCookies(platform) {
+async function importCookie() {
+  const name = cookieNameInput.value.trim();
+  if (!name) {
+    analyzeError.textContent = "Type a name for this cookie set first (e.g. insta).";
+    analyzeError.classList.remove("hidden");
+    return;
+  }
   const selected = await open({
     multiple: false,
     filters: [{ name: "Cookies", extensions: ["txt"] }],
   });
   if (!selected) return;
   try {
-    await invoke("import_platform_cookies", { platform, sourcePath: selected });
-    await refreshCookieStatus();
+    const savedAs = await invoke("import_cookie", { name, sourcePath: selected });
+    cookieNameInput.value = "";
+    await renderCookies();
+    analyzeError.textContent = savedAs === name ? "" : `Saved as "${savedAs}".`;
   } catch (err) {
-    analyzeError.textContent = `Failed to import ${platform} cookies: ${err}`;
+    analyzeError.textContent = `Failed to import "${name}" cookies: ${err}`;
     analyzeError.classList.remove("hidden");
   }
 }
 
-async function clearCookies(platform) {
-  try {
-    await invoke("clear_platform_cookies", { platform });
-    await refreshCookieStatus();
-  } catch (err) {
-    analyzeError.textContent = `Failed to clear ${platform} cookies: ${err}`;
-    analyzeError.classList.remove("hidden");
-  }
-}
-
-// Wire up cookie import/clear buttons
-for (const [platform, el] of Object.entries(cookieStatuses)) {
-  el.btn.addEventListener("click", () => importCookies(platform));
-  el.clear.addEventListener("click", () => clearCookies(platform));
-}
+cookieAddBtn.addEventListener("click", importCookie);
+cookieNameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") importCookie();
+});
 
 /* ---------- URL helpers ---------- */
 

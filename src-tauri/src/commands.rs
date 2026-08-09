@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,6 +41,35 @@ fn last_thumbnail(v: &Value) -> Option<String> {
         .map(String::from)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CookieEntry {
+    name: String,
+    path: String,
+}
+
+/// Normalize a user-entered cookie profile name into a safe file stem:
+/// lowercased, restricted to [a-z0-9._-], path separators and traversal
+/// sequences stripped, capped at 64 chars. Rejects names that would be empty.
+fn sanitize_cookie_name(raw: &str) -> Result<String, String> {
+    let cleaned: String = raw
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches(['_', '.', '-']);
+    if trimmed.is_empty() {
+        return Err("cookie name must contain at least one letter or digit".into());
+    }
+    Ok(trimmed.chars().take(64).collect())
+}
+
 /// Detect which platform a URL belongs to for cookie file selection.
 fn detect_platform(url: &str) -> Option<&'static str> {
     let lower = url.to_lowercase();
@@ -56,46 +84,166 @@ fn detect_platform(url: &str) -> Option<&'static str> {
     }
 }
 
-/// Resolve the path to a platform-specific cookies.txt if one exists.
-fn platform_cookies_file(app: &AppHandle, url: &str) -> Option<String> {
-    let platform = detect_platform(url)?;
-    let path = pluck::app_cookies_dir(app).join(format!("{platform}.txt"));
-    if path.exists() {
-        Some(path.to_string_lossy().to_string())
-    } else {
-        None
+/// Pick which stored cookies.txt applies to a URL, if any.
+///
+/// Every saved profile matches when its name appears in the URL (case-
+/// insensitive), so a profile named "insta" serves instagram.com links. The
+/// longest matching name wins because it is the most specific (an "instagram"
+/// profile beats a shorter "insta"). The original platform names still match
+/// through [`detect_platform`] so x.com → "twitter" and youtu.be → "youtube"
+/// keep working for existing users.
+fn settings_cookie_file(dir: &std::path::Path, url: &str) -> Option<String> {
+    let lower = url.to_lowercase();
+    let mut candidates: Vec<(usize, String, std::path::PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("txt") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let name = stem.to_lowercase();
+            if !name.is_empty() && lower.contains(&name) {
+                candidates.push((name.len(), name, path));
+            }
+        }
     }
+    if let Some(platform) = detect_platform(&lower) {
+        let path = dir.join(format!("{platform}.txt"));
+        if path.is_file() {
+            candidates.push((platform.len(), platform.to_string(), path));
+        }
+    }
+    candidates
+        .into_iter()
+        .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+        .map(|(_, _, path)| path.to_string_lossy().to_string())
 }
 
+/// Resolve the path to a stored cookies.txt for a URL if one exists.
+fn cookies_file_for_url(app: &AppHandle, url: &str) -> Option<String> {
+    settings_cookie_file(&pluck::app_cookies_dir(app), url)
+}
+
+/// Import a cookies.txt file under a user-chosen name (e.g. "insta").
 #[tauri::command]
-pub async fn import_platform_cookies(
-    app: AppHandle,
-    platform: String,
-    source_path: String,
-) -> Result<String, String> {
-    let dest = pluck::app_cookies_dir(&app).join(format!("{platform}.txt"));
+pub fn import_cookie(app: AppHandle, name: String, source_path: String) -> Result<String, String> {
+    let name = sanitize_cookie_name(&name)?;
+    let dest = pluck::app_cookies_dir(&app).join(format!("{name}.txt"));
     std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::copy(&source_path, &dest).map_err(|e| format!("failed to copy cookies: {e}"))?;
-    Ok(dest.to_string_lossy().to_string())
+    Ok(name)
 }
 
+/// Remove a stored cookies.txt by profile name.
 #[tauri::command]
-pub fn clear_platform_cookies(app: AppHandle, platform: String) -> Result<(), String> {
-    let path = pluck::app_cookies_dir(&app).join(format!("{platform}.txt"));
+pub fn delete_cookie(app: AppHandle, name: String) -> Result<(), String> {
+    let name = sanitize_cookie_name(&name)?;
+    let path = pluck::app_cookies_dir(&app).join(format!("{name}.txt"));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
+/// List all stored cookie profiles (name + saved file path).
 #[tauri::command]
-pub fn get_platform_cookies_status(app: AppHandle) -> HashMap<String, bool> {
+pub fn list_cookies(app: AppHandle) -> Vec<CookieEntry> {
     let dir = pluck::app_cookies_dir(&app);
-    let mut map = HashMap::new();
-    for platform in &["twitter", "youtube", "tiktok"] {
-        map.insert(platform.to_string(), dir.join(format!("{platform}.txt")).exists());
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("txt") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            out.push(CookieEntry {
+                name: name.to_string(),
+                path: path.to_string_lossy().to_string(),
+            });
+        }
     }
-    map
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_cookie_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "yt-plucker-cookie-test-{}-{tag}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn cookie_name_sanitizes_safely() {
+        assert_eq!(sanitize_cookie_name("Insta").unwrap(), "insta");
+        assert_eq!(sanitize_cookie_name(" insta.com ").unwrap(), "insta.com");
+        assert_eq!(sanitize_cookie_name("../../evil").unwrap(), "evil");
+        assert_eq!(sanitize_cookie_name("x/y").unwrap(), "x_y");
+        assert!(sanitize_cookie_name("").is_err());
+        assert!(sanitize_cookie_name("...").is_err());
+        assert!(sanitize_cookie_name("///").is_err());
+    }
+
+    #[test]
+    fn matching_uses_name_substring_in_url() {
+        let dir = test_cookie_dir("substring");
+        std::fs::write(dir.join("insta.txt"), "").unwrap();
+        assert_eq!(
+            settings_cookie_file(&dir, "https://www.instagram.com/reel/abc/").as_deref(),
+            Some(dir.join("insta.txt").to_str().unwrap())
+        );
+        assert_eq!(settings_cookie_file(&dir, "https://example.com/"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn longest_name_wins() {
+        let dir = test_cookie_dir("longest");
+        std::fs::write(dir.join("insta.txt"), "").unwrap();
+        std::fs::write(dir.join("instagram.txt"), "").unwrap();
+        assert_eq!(
+            settings_cookie_file(&dir, "https://www.instagram.com/reel/abc123/").as_deref(),
+            Some(dir.join("instagram.txt").to_str().unwrap())
+        );
+        // shorter profile still matches when it is the only one available
+        std::fs::remove_file(dir.join("instagram.txt")).unwrap();
+        assert_eq!(
+            settings_cookie_file(&dir, "https://www.instagram.com/reel/abc123/").as_deref(),
+            Some(dir.join("insta.txt").to_str().unwrap())
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_platform_names_still_match() {
+        let dir = test_cookie_dir("legacy");
+        std::fs::write(dir.join("twitter.txt"), "").unwrap();
+        std::fs::write(dir.join("youtube.txt"), "").unwrap();
+        // x.com URLs never contain "twitter"; the legacy mapping supplies it.
+        assert_eq!(
+            settings_cookie_file(&dir, "https://x.com/somebody/status/123").as_deref(),
+            Some(dir.join("twitter.txt").to_str().unwrap())
+        );
+        // youtu.be short links don't contain "youtube" either.
+        assert_eq!(
+            settings_cookie_file(&dir, "https://youtu.be/abc123").as_deref(),
+            Some(dir.join("youtube.txt").to_str().unwrap())
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 #[tauri::command]
@@ -118,8 +266,8 @@ pub async fn fetch_metadata(
             args.extend(["--cookies-from-browser".into(), b.into()]);
         }
     }
-    // Auto-apply platform-specific cookies.txt if available.
-    if let Some(cf) = platform_cookies_file(&app, &url) {
+    // Auto-apply stored cookies.txt if the URL matches a profile.
+    if let Some(cf) = cookies_file_for_url(&app, &url) {
         args.extend(["--cookies".into(), cf]);
     }
     args.push(url);
@@ -230,7 +378,7 @@ pub async fn start_pluck(
     cookies_from_browser: Option<String>,
 ) -> Result<(), String> {
     let archive = pluck::archive_path(&app, job_id)?;
-    let cookies_file = platform_cookies_file(&app, &url);
+    let cookies_file = cookies_file_for_url(&app, &url);
     let args = pluck::build_args(
         &url,
         &quality,

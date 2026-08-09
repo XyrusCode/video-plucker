@@ -153,26 +153,17 @@
       <section id="cookie-manager" class="cookie-manager chrome">
         <div class="cookie-head">
           <span class="cookie-manager-title">Cookie Manager</span>
-          <span class="cookie-manager-hint">Import cookies.txt for smoother downloads</span>
+          <span class="cookie-manager-hint">Name matches your URL (e.g. insta → instagram.com)</span>
         </div>
-        <div class="cookie-body">
-          <div class="cookie-row">
-            <span class="cookie-label">Twitter (X)</span>
-            <button id="cookie-twitter" class="glossy-btn cookie-import">Import</button>
-            <span id="cookie-twitter-status" class="cookie-status not-loaded">Not loaded</span>
-            <button id="cookie-twitter-clear" class="glossy-btn cookie-clear hidden">Clear</button>
-          </div>
-          <div class="cookie-row">
-            <span class="cookie-label">YouTube</span>
-            <button id="cookie-youtube" class="glossy-btn cookie-import">Import</button>
-            <span id="cookie-youtube-status" class="cookie-status not-loaded">Not loaded</span>
-            <button id="cookie-youtube-clear" class="glossy-btn cookie-clear hidden">Clear</button>
-          </div>
-          <div class="cookie-row">
-            <span class="cookie-label">TikTok</span>
-            <button id="cookie-tiktok" class="glossy-btn cookie-import">Import</button>
-            <span id="cookie-tiktok-status" class="cookie-status not-loaded">Not loaded</span>
-            <button id="cookie-tiktok-clear" class="glossy-btn cookie-clear hidden">Clear</button>
+        <div class="cookie-body" id="cookie-body">
+          <div class="cookie-add">
+            <input
+              id="cookie-name-input"
+              type="text"
+              placeholder="Set name, e.g. insta"
+              spellcheck="false"
+            />
+            <button id="cookie-add-btn" class="glossy-btn cookie-import">Import cookies.txt…</button>
           </div>
         </div>
       </section>

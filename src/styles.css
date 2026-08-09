@@ -659,6 +659,38 @@ select {
   color: var(--text-dim);
 }
 
+.cookie-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cookie-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.cookie-add input:focus {
+  outline: none;
+  border-color: var(--candy-amber-hi);
+}
+
+.cookie-empty {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* ---------- plucks list ---------- */
 #plucks-head {
   display: flex;

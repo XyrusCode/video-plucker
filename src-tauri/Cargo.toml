@@ -1,6 +1,6 @@
 [package]
 name = "yt-plucker"
-version = "3.4.0"
+version = "4.2.0"
 description = "Xyrus' YT Plucker - pluck videos from YouTube, X (Twitter) and streaming sites"
 authors = ["Prince Shammah"]
 edition = "2021"
