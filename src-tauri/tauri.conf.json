@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Xyrus YT Plucker",
   "mainBinaryName": "yt-plucker",
-  "version": "4.1.0",
-  "identifier": "tech.acachi.ytplucker",
+  "version": "4.2.0",
+  "identifier": "tech.xyruscode.ytplucker",
   "build": {
     "frontendDist": "../src"
   },
