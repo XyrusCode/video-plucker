@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Xyrus YT Plucker",
+  "productName": "Video Plucker",
   "mainBinaryName": "yt-plucker",
-  "version": "4.2.0",
-  "identifier": "tech.xyruscode.ytplucker",
+  "version": "4.3.0",
+  "identifier": "tech.xyruscode.videoplucker",
   "build": {
     "frontendDist": "../src"
   },
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Xyrus' YT Plucker",
+        "title": "Video Plucker",
         "width": 920,
         "height": 680,
         "minWidth": 700,
@@ -27,6 +27,15 @@
     "deep-link": {
       "desktop": {
         "schemes": ["yt-plucker"]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/XyrusCode/video-plucker/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_GENERATED_PUBKEY",
+      "windows": {
+        "installMode": "basicUi"
       }
     }
   },

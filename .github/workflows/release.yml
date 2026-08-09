@@ -149,12 +149,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # tauri-action creates the git tag and the GitHub release from this
           # name; every matrix job passes the same tag, so they publish into one
           # release. The version comes from the check job, not a pushed tag.
           tagName: v${{ needs.check.outputs.version }}
-          releaseName: "Xyrus' YT Plucker v${{ needs.check.outputs.version }}"
+          releaseName: "Video Plucker v${{ needs.check.outputs.version }}"
           releaseBody: |
             Pluck videos from YouTube, X (Twitter), and streaming sites.
 
@@ -167,3 +169,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
+          updaterJsonPreferNsis: true
