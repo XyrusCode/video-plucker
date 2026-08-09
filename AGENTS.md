@@ -1,4 +1,4 @@
-# Xyrus YT Plucker — Repository Instructions
+# Video Plucker — Repository Instructions
 
 ## Build & Verify via CI, not locally
 

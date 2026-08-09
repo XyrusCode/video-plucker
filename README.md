@@ -1,4 +1,4 @@
-# Xyrus' YT Plucker
+# Video Plucker
 
 A desktop app for plucking videos from YouTube, X (Twitter), and streaming
 sites, built with [Tauri v2](https://v2.tauri.app) (Rust backend, vanilla

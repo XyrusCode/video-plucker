@@ -103,6 +103,8 @@ function fmtDuration(secs) {
 
 /* ---------- settings + persistence ---------- */
 
+const TERMS_KEY = "video-plucker-terms-accepted";
+
 async function initSettings() {
   store = await load("settings.json", { autoSave: true });
   plucksStore = await load("plucks.json", { autoSave: true });
@@ -1059,12 +1061,167 @@ listen("deep-link-received", async (event) => {
   await handleDeepLink(event.payload);
 });
 
+/* ---------- terms of use ---------- */
+
+const termsOverlay = document.getElementById("terms-overlay");
+const termsAcceptBtn = document.getElementById("terms-accept-btn");
+const viewTermsBtn = document.getElementById("view-terms-btn");
+
+function termsAccepted() {
+  try {
+    return localStorage.getItem(TERMS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function acceptTerms() {
+  try {
+    localStorage.setItem(TERMS_KEY, "true");
+  } catch { /* localStorage may be unavailable in some contexts */ }
+  termsOverlay.classList.add("hidden");
+}
+
+function showTerms() {
+  termsOverlay.classList.remove("hidden");
+}
+
+termsAcceptBtn.addEventListener("click", acceptTerms);
+
+viewTermsBtn.addEventListener("click", showTerms);
+
+/* ---------- updater ---------- */
+
+const AUTO_UPDATE_KEY = "auto-update";
+const autoUpdateCheck = document.getElementById("auto-update-check");
+const checkUpdatesBtn = document.getElementById("check-updates-btn");
+
+let updater = null;
+let updateChecked = false;
+
+// Tauri v2 exposes updater via window.__TAURI__.updater
+function getUpdater() {
+  if (!updater && window.__TAURI__?.updater) {
+    updater = window.__TAURI__.updater;
+  }
+  return updater;
+}
+
+async function initUpdater() {
+  // Load auto-update preference from store
+  try {
+    const saved = await store.get(AUTO_UPDATE_KEY);
+    if (saved !== undefined && saved !== null) {
+      autoUpdateCheck.checked = saved;
+    }
+  } catch {
+    // default is checked (set in HTML)
+  }
+}
+
+autoUpdateCheck.addEventListener("change", async () => {
+  await store.set(AUTO_UPDATE_KEY, autoUpdateCheck.checked);
+});
+
+function showUpdateBanner(version, body) {
+  // Remove any existing banner
+  const existing = document.querySelector(".update-banner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.className = "update-banner chrome";
+  banner.innerHTML = `
+    <span>Video Plucker <strong>v${version}</strong> is available.</span>
+    <div class="update-actions">
+      <button id="update-install-btn" class="glossy-btn primary">Download &amp; Install</button>
+      <button id="update-dismiss-btn" class="glossy-btn">Dismiss</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+
+  banner.querySelector("#update-install-btn").addEventListener("click", async () => {
+    banner.remove();
+    await installUpdate();
+  });
+
+  banner.querySelector("#update-dismiss-btn").addEventListener("click", () => {
+    banner.remove();
+  });
+}
+
+async function installUpdate() {
+  const u = getUpdater();
+  if (!u) return;
+
+  checkUpdatesBtn.disabled = true;
+  checkUpdatesBtn.textContent = "Installing…";
+
+  try {
+    await u.downloadAndInstall();
+    // The app will restart after install
+  } catch (err) {
+    checkUpdatesBtn.disabled = false;
+    checkUpdatesBtn.textContent = "Check for Updates";
+    console.error("Update install failed:", err);
+  }
+}
+
+async function checkForUpdates({ silent = false } = {}) {
+  const u = getUpdater();
+  if (!u) return;
+
+  checkUpdatesBtn.disabled = true;
+  checkUpdatesBtn.textContent = "Checking…";
+
+  try {
+    const result = await u.check();
+    updateChecked = true;
+
+    if (result?.shouldUpdate) {
+      showUpdateBanner(result.manifest?.version || "new", result.manifest?.body || "");
+    } else if (!silent) {
+      checkUpdatesBtn.textContent = "Up to date";
+      setTimeout(() => {
+        checkUpdatesBtn.textContent = "Check for Updates";
+      }, 2000);
+    }
+  } catch (err) {
+    updateChecked = false;
+    if (!silent) {
+      checkUpdatesBtn.textContent = "Check failed";
+      setTimeout(() => {
+        checkUpdatesBtn.disabled = false;
+        checkUpdatesBtn.textContent = "Check for Updates";
+      }, 3000);
+    }
+    console.error("Update check failed:", err);
+  } finally {
+    if (checkUpdatesBtn.textContent === "Checking…") {
+      checkUpdatesBtn.disabled = false;
+      checkUpdatesBtn.textContent = "Check for Updates";
+    }
+  }
+}
+
+checkUpdatesBtn.addEventListener("click", () => checkForUpdates({ silent: false }));
+
 /* ---------- init ---------- */
 
 initSearchView();
 
+if (!termsAccepted()) {
+  showTerms();
+}
+
 initSettings()
-  .then(() => {
+  .then(async () => {
+    await initUpdater();
+
+    // Auto-check for updates on startup if enabled
+    if (autoUpdateCheck.checked && getUpdater()) {
+      checkForUpdates({ silent: true });
+    }
+
     // Check for a deep-link that arrived before the frontend was ready.
     return invoke("consume_deep_link").then((payload) => {
       if (payload) handleDeepLink(payload);

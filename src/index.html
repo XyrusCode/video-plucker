@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Xyrus' YT Plucker</title>
+    <title>Video Plucker</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main>
       <header class="chrome">
         <div class="logo">▶</div>
-        <h1>Xyrus' YT Plucker</h1>
-        <span class="tagline">pluck videos from YouTube, X &amp; streaming sites</span>
+        <h1>Video Plucker</h1>
+        <span class="tagline">download videos from YouTube, X, TikTok &amp; streaming sites</span>
       </header>
 
       <nav class="nav-tabs chrome">
@@ -173,7 +173,48 @@
         <button id="clear-history-btn" class="glossy-btn clear-history">Clear history</button>
       </section>
       <section id="plucks"></section>
+
+      <footer class="terms-footer">
+        <label class="auto-update-toggle" title="Automatically check for updates on startup">
+          <input type="checkbox" id="auto-update-check" checked />
+          Auto-update
+        </label>
+        <button id="check-updates-btn">Check for Updates</button>
+        <button id="view-terms-btn">Terms of Use</button>
+      </footer>
     </main>
+
+    <!-- Terms of Use modal (shown on first launch) -->
+    <div id="terms-overlay" class="hidden">
+      <div class="terms-modal chrome">
+        <h2>Terms of Use</h2>
+        <div class="terms-body">
+          <p><strong>Video Plucker</strong> is a video download tool for personal use.</p>
+
+          <h3>1. Responsible Use</h3>
+          <p>You are solely responsible for ensuring that your use of this software complies with all applicable laws, including copyright law. This software is intended for downloading content you have the legal right to access and store for personal, non-commercial use only.</p>
+
+          <h3>2. Copyright Compliance</h3>
+          <p>Do not use this software to download copyrighted content without permission from the rights holder, unless your use falls within fair use, fair dealing, or another legally recognized exception. Unauthorized downloading, reproduction, or redistribution of copyrighted material may violate applicable laws.</p>
+
+          <h3>3. No Redistribution</h3>
+          <p>Content downloaded with this software is for your personal use and must not be redistributed, re-uploaded, sold, or otherwise shared in a way that infringes on others' rights.</p>
+
+          <h3>4. Third-Party Tools</h3>
+          <p>Video Plucker bundles and invokes third-party tools including yt-dlp and ffmpeg. These tools are subject to their own licenses. The developers of Video Plucker are not responsible for the behavior, output, or legality of these bundled tools. You are responsible for using them in compliance with their respective terms.</p>
+
+          <h3>5. No Warranty &amp; Limitation of Liability</h3>
+          <p>This software is provided "as is," without warranty of any kind. The developers are not liable for any damages, losses, or legal consequences arising from your use of this software. You assume all risk associated with its use.</p>
+
+          <h3>6. Changes to These Terms</h3>
+          <p>These terms may be updated in future releases. Continued use of the software after an update constitutes acceptance of the revised terms.</p>
+        </div>
+        <div class="terms-actions">
+          <button id="terms-accept-btn" class="glossy-btn primary">I Accept</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="main.js"></script>
   </body>
 </html>

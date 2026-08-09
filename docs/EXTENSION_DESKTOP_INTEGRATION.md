@@ -1,7 +1,7 @@
 # Extension ↔ Desktop Integration Spec
 
 This doc is the source of truth for the protocol between the **browser extension**
-(`Xyrus-YT-Plucker-Extension`) and the **Tauri v2 desktop app** (`xyrus-yt-plucker`).
+(`Xyrus-YT-Plucker-Extension`) and the **Tauri v2 desktop app** (`video-plucker`).
 Both repos have a copy — keep them in sync.
 
 ---
@@ -142,7 +142,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 | Extension | Desktop | Protocol |
 |-----------|---------|----------|
-| 1.1.0     | 4.2.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
+| 1.1.0     | 4.3.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
 
 ## Key Files
 
@@ -157,4 +157,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.2.0 (deep-link action fix: accept the action in the URL host)*
+*Last updated: v4.3.0 (rebrand to Video Plucker)*
