@@ -190,5 +190,5 @@ jobs:
         run: |
           npm install -g wrangler
           for f in dist/*; do
-            wrangler r2 object put "video-plucker-releases/releases/v${{ needs.check.outputs.version }}/$(basename "$f")" --file "$f" --remote
+            wrangler r2 object put "video-plucker-releases/desktop/v${{ needs.check.outputs.version }}/$(basename "$f")" --file "$f" --remote
           done
