@@ -11,5 +11,14 @@
 ## Conventions
 
 - Version is maintained in **both** `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (keep them in sync; bump both per release).
-- Feature commits carry the version bump, e.g. `feat: ... (v4.2.0)`.
+- Feature commits carry the version bump, e.g. `feat: ... (v4.4.0)`.
 - Protocol contract with the browser extension lives in `docs/EXTENSION_DESKTOP_INTEGRATION.md` — update the version table when the protocol or app version changes.
+
+## Release & R2 Mirroring
+
+- **Trigger:** Bump `version` in `src-tauri/tauri.conf.json` and land on `main`. The `release.yml` workflow auto-detects whether a release for that version already exists (idempotent; no duplicate releases).
+- **Build:** Windows (`.exe`), macOS (`.dmg`), Linux (`.deb`) in parallel via tauri-action.
+- **R2 mirror:** After GitHub Release creation, the `mirror` job downloads all assets and uploads them to Cloudflare R2 bucket `video-plucker-releases` under `desktop/v<VERSION>/`.
+- **Mirror URLs:** `https://releases.xyruscode.com/desktop/v<VERSION>/<asset>`
+- **Auth:** `${{ secrets.CLOUDFLARE_API_TOKEN }}` passed to `wrangler r2 object put` with `--remote` flag.
+- **Manual mirror (if CI is stuck):** `npx wrangler r2 object put "video-plucker-releases/desktop/v<VERSION>/<file>" --file <path> --remote`
