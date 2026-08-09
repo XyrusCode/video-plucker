@@ -172,7 +172,7 @@ jobs:
           updaterJsonPreferNsis: true
 
   mirror:
-    needs: release
+    needs: [release, check]
     runs-on: ubuntu-latest
     steps:
       - name: Download release assets
