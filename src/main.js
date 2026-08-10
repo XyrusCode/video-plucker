@@ -740,6 +740,16 @@ listen("pluck://done", ({ payload }) => {
   if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
 });
 
+listen("pluck://cookies", ({ payload }) => {
+  const job = jobs.get(payload.jobId);
+  if (!job) return;
+  job.errorsEl.classList.remove("hidden");
+  const line = document.createElement("div");
+  line.className = "job-info";
+  line.textContent = `Using cookies: ${payload.file}`;
+  job.errorsEl.appendChild(line);
+});
+
 /* ---------- search view ---------- */
 
 function showView(which) {

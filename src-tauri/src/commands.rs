@@ -79,8 +79,21 @@ fn detect_platform(url: &str) -> Option<&'static str> {
         Some("youtube")
     } else if lower.contains("tiktok.com") {
         Some("tiktok")
+    } else if lower.contains("vk.com") || lower.contains("vk.ru") || lower.contains("vkvideo.ru") {
+        Some("vk")
     } else {
         None
+    }
+}
+
+/// Extra name tokens that identify a cookie profile for a platform, so a
+/// profile saved as "vk_video" or "vkontakte" still serves vk.com URLs.
+/// `name.contains(alias)` is the test: VK profile names survive the
+/// "VK Video" → "vk_video" sanitizer and the "vkontakte" legacy name.
+fn platform_aliases(platform: Option<&str>) -> &'static [&'static str] {
+    match platform {
+        Some("vk") => &["vk", "vkontakte"],
+        _ => &[],
     }
 }
 
@@ -91,9 +104,11 @@ fn detect_platform(url: &str) -> Option<&'static str> {
 /// longest matching name wins because it is the most specific (an "instagram"
 /// profile beats a shorter "insta"). The original platform names still match
 /// through [`detect_platform`] so x.com → "twitter" and youtu.be → "youtube"
-/// keep working for existing users.
+/// keep working for existing users, and vk.com URLs accept any profile whose
+/// name contains "vk" or "vkontakte" (e.g. "vk", "vk_video", "vkontakte").
 fn settings_cookie_file(dir: &std::path::Path, url: &str) -> Option<String> {
     let lower = url.to_lowercase();
+    let aliases = platform_aliases(detect_platform(&lower));
     let mut candidates: Vec<(usize, String, std::path::PathBuf)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -105,7 +120,9 @@ fn settings_cookie_file(dir: &std::path::Path, url: &str) -> Option<String> {
                 continue;
             };
             let name = stem.to_lowercase();
-            if !name.is_empty() && lower.contains(&name) {
+            let matches_url = !name.is_empty() && lower.contains(&name);
+            let matches_alias = aliases.iter().any(|alias| name.contains(*alias));
+            if matches_url || matches_alias {
                 candidates.push((name.len(), name, path));
             }
         }
@@ -244,6 +261,44 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn vk_profiles_match_across_all_vk_hosts() {
+        let dir = test_cookie_dir("vk");
+        std::fs::write(dir.join("vk.txt"), "").unwrap();
+        std::fs::write(dir.join("vk_video.txt"), "").unwrap();
+        std::fs::write(dir.join("vkontakte.txt"), "").unwrap();
+        for url in [
+            "https://vk.com/video-100500_456239017",
+            "https://m.vk.ru/video-100500_456239017",
+            "https://vkvideo.ru/video-100500_456239017",
+        ] {
+            assert_eq!(
+                settings_cookie_file(&dir, url).as_deref(),
+                Some(dir.join("vkontakte.txt").to_str().unwrap()),
+                "longest vk profile should win for {url}"
+            );
+        }
+        // a non-vk URL must not be served by "vk"-titled profiles
+        assert_eq!(
+            settings_cookie_file(&dir, "https://github.com/").as_deref(),
+            None
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn vk_profile_sanitized_from_friendly_name() {
+        // "VK Video" becomes "vk_video"; a vk.com URL must still find it
+        let dir = test_cookie_dir("vk_friendly");
+        assert_eq!(sanitize_cookie_name("VK Video").unwrap(), "vk_video");
+        std::fs::write(dir.join("vk_video.txt"), "").unwrap();
+        assert_eq!(
+            settings_cookie_file(&dir, "https://vk.com/video-100500_456239017").as_deref(),
+            Some(dir.join("vk_video.txt").to_str().unwrap())
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 #[tauri::command]
@@ -379,6 +434,13 @@ pub async fn start_pluck(
 ) -> Result<(), String> {
     let archive = pluck::archive_path(&app, job_id)?;
     let cookies_file = cookies_file_for_url(&app, &url);
+    if let Some(cf) = &cookies_file {
+        // surface which cookies.txt got applied so a missing match is obvious
+        let _ = app.emit(
+            "pluck://cookies",
+            serde_json::json!({ "jobId": job_id, "file": cf }),
+        );
+    }
     let args = pluck::build_args(
         &url,
         &quality,

@@ -892,6 +892,10 @@ select {
   user-select: text;
 }
 
+.job-info {
+  color: var(--text-dim);
+}
+
 /* ---------- expand toggle + per-item list ---------- */
 .job-expand {
   padding: 2px 8px;
