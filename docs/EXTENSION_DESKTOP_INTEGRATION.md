@@ -143,6 +143,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | Extension | Desktop | Protocol |
 |-----------|---------|----------|
 | 1.1.0     | 4.3.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
+| 1.2.5     | 4.4.0   | Same protocol; cookies.txt export feeds the desktop Cookie Manager |
 
 ## Key Files
 
@@ -157,4 +158,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.3.0 (rebrand to Video Plucker)*
+*Last updated: v4.4.0 (cookie export + ChromeCookieUnlock)*

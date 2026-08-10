@@ -143,7 +143,11 @@ TV (leanback launcher), Firebase Remote Config, Sentry crash reporting.
 
 **Features:** Single video + playlist downloads, streaming site search (AllAnime,
 LuciferDonghua), quality selection (audio-only through 4K), system tray with
-background downloads, resume after crash, YouTube cookie import from browser.
+background downloads, resume after crash, cookie manager (import/clear
+cookies.txt per profile; `vk`/`vkontakte` profile names serve vk.com + vk.ru +
+vkvideo.ru URLs), YouTube cookie import from browser. Bundles the MIT-licensed
+ChromeCookieUnlock yt-dlp plugin (`src-tauri/yt-dlp-plugins/`) so browser
+cookies still unlock Chromium cookie DBs that are locked by a running browser.
 
 **See also:** `Video-Plucker-Desktop/AGENTS.md` for full desktop-specific rules.
 
@@ -174,8 +178,9 @@ are sent via POST to `/pair` from both the popup's "Send to Desktop" button
 and the right-click context menu.
 
 **Features:** Floating pluck button on supported sites, right-click context menu
-("Pluck This Video" / "Pluck This Playlist" / "Send to Desktop App"), per-platform
-cookie manager (import/clear cookies.txt), browser cookies via
+("Pluck This Video" / "Pluck This Playlist" / "Send to Desktop App" / "Export
+cookies.txt for this site"), cookies.txt export (saved to Downloads for import
+into the desktop Cookie Manager), browser cookies via
 `--cookies-from-browser`, playlist downloads (individual or zip).
 
 ---
@@ -273,6 +278,6 @@ Video-Plucker/
 
 | App | Version | Location |
 |-----|---------|----------|
-| Android | 4.7.4 (v20) | `app/build.gradle.kts` |
-| Desktop | 4.3.4 | `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml` |
-| Extension | 1.1.0 | `manifest.json` |
+| Android | 4.7.5 (v22) | `app/build.gradle.kts` |
+| Desktop | 4.4.0 | `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml` |
+| Extension | 1.2.5 | `manifest.json` |
