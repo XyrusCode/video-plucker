@@ -13,5 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pause and resume: pause an in-progress download and pick it back up later.
   Partial progress is kept, and already-finished items in a playlist are skipped
   on resume.
-- Links to the XyrusCode software catalogue and to the Discord community, in the
-  app footer.
+- Links to the XyrusCode software catalogue and to the Discord community, in the app footer.
+
+### Changed
+- Queue now optional: users can toggle queue on/off in Settings → Experimental features
+- 4-tab structure: Download, Queue, History, Settings (Browser optional 5th tab)
+- Download button shows "Add to Queue" or "Download" based on queue setting
