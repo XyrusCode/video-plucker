@@ -76,6 +76,12 @@ pub struct DonePayload {
     pub cancelled: bool,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PausedPayload {
+    pub job_id: u64,
+}
+
 pub fn build_args(
     url: &str,
     quality: &str,
