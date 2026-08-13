@@ -2,7 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { open } = window.__TAURI__.dialog;
 const { load } = window.__TAURI__.store;
-const { revealItemInDir } = window.__TAURI__.opener;
+const { revealItemInDir, openUrl } = window.__TAURI__.opener;
 const { downloadDir } = window.__TAURI__.path;
 
 const urlInput = document.getElementById("url-input");
@@ -59,6 +59,8 @@ let destDir = "";
 let currentMeta = null;
 let nextJobId = 1;
 const jobs = new Map(); // jobId -> job state + DOM refs
+const jobQueue = []; // jobs waiting for the single download slot
+let activeJob = null; // job currently using the slot (running or paused)
 
 // search state
 let currentResult = null; // the SearchResult being viewed in the detail panel
@@ -369,6 +371,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
       <button class="job-expand hidden" title="Show items">▸</button>
       <span class="job-title"></span>
       <button class="job-cancel">Cancel</button>
+      <button class="job-pause hidden">Pause</button>
       <button class="job-resume hidden">Resume</button>
       <button class="job-open hidden">Open folder</button>
       <button class="job-dismiss hidden" title="Remove">✕</button>
@@ -407,11 +410,13 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     errorsEl: card.querySelector(".job-errors"),
     itemsEl: card.querySelector(".job-items"),
     cancelBtn: card.querySelector(".job-cancel"),
+    pauseBtn: card.querySelector(".job-pause"),
     resumeBtn: card.querySelector(".job-resume"),
     openBtn: card.querySelector(".job-open"),
     dismissBtn: card.querySelector(".job-dismiss"),
     expandBtn: card.querySelector(".job-expand"),
     itemRows: new Map(),
+    queued: false,
   };
 
   if (isPlaylist) {
@@ -428,6 +433,11 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
 
   job.cancelBtn.addEventListener("click", async () => {
     job.cancelBtn.disabled = true;
+    if (job.queued) {
+      removeFromQueue(job);
+      finishJob(job, { ok: false, cancelled: true });
+      return;
+    }
     try {
       await invoke("cancel_pluck", { jobId });
     } catch {
@@ -435,11 +445,23 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     }
   });
 
+  job.pauseBtn.addEventListener("click", async () => {
+    job.pauseBtn.disabled = true;
+    try {
+      await invoke("pause_pluck", { jobId });
+    } catch {
+      job.pauseBtn.disabled = false;
+    }
+  });
+
   job.resumeBtn.addEventListener("click", () => resumeJob(job));
   job.dismissBtn.addEventListener("click", async () => {
     await removeRecord(jobId);
+    if (activeJob === job) activeJob = null;
+    removeFromQueue(job);
     jobs.delete(jobId);
     job.card.remove();
+    drainQueue();
   });
   job.openBtn.addEventListener("click", () => {
     if (job.lastFile) revealItemInDir(job.lastFile);
@@ -494,11 +516,14 @@ function markItem(job, index, state, title) {
 // Start (or resume) a pluck. On resume we reuse the same jobId so its yt-dlp
 // download archive lines up and finished items are skipped.
 async function beginPluck(job, { fresh }) {
+  job.queued = false;
   job.card.classList.remove("done");
   job.statusEl.className = "job-status";
   job.statusEl.textContent = "Starting…";
   job.cancelBtn.classList.remove("hidden");
   job.cancelBtn.disabled = false;
+  job.pauseBtn.classList.remove("hidden");
+  job.pauseBtn.disabled = false;
   job.resumeBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
   job.dismissBtn.classList.add("hidden");
@@ -539,10 +564,41 @@ async function beginPluck(job, { fresh }) {
   }
 }
 
-function resumeJob(job) {
+async function resumeJob(job) {
   job.completed = 0; // the archive is the source of truth; rebuild from events
   if (job.isPlaylist) buildItemRows(job);
-  beginPluck(job, { fresh: false });
+  if (activeJob === job) {
+    // Resuming a paused job: it already owns the download slot.
+    await beginPluck(job, { fresh: false });
+  } else {
+    await enqueueJob(job, { fresh: false });
+  }
+}
+
+// Add a job to the single-active FIFO queue and start it if the slot is free.
+async function enqueueJob(job, { fresh }) {
+  job.queued = true;
+  jobQueue.push({ job, fresh });
+  job.statusEl.textContent = "Queued";
+  job.statusEl.classList.add("queued");
+  job.pauseBtn.classList.add("hidden");
+  job.cancelBtn.classList.remove("hidden");
+  job.cancelBtn.disabled = false;
+  drainQueue();
+}
+
+function drainQueue() {
+  if (activeJob) return;
+  const entry = jobQueue.shift();
+  if (!entry) return;
+  activeJob = entry.job;
+  beginPluck(entry.job, { fresh: entry.fresh });
+}
+
+function removeFromQueue(job) {
+  const idx = jobQueue.findIndex((e) => e.job === job);
+  if (idx !== -1) jobQueue.splice(idx, 1);
+  job.queued = false;
 }
 
 pluckBtn.addEventListener("click", async () => {
@@ -562,7 +618,7 @@ pluckBtn.addEventListener("click", async () => {
   const job = createJobCard(jobId, params, {
     titles: isPlaylist ? currentMeta.entries : [],
   });
-  await beginPluck(job, { fresh: true });
+  await enqueueJob(job, { fresh: true });
 });
 
 // Re-create cards for plucks that were still active when the app last closed.
@@ -625,7 +681,9 @@ function setOverall(job, itemFraction) {
 }
 
 function finishJob(job, { ok, cancelled, error }) {
+  if (activeJob === job) activeJob = null;
   job.cancelBtn.classList.add("hidden");
+  job.pauseBtn.classList.add("hidden");
   job.speedEl.textContent = "";
   job.etaEl.textContent = "";
   if (ok) {
@@ -649,6 +707,7 @@ function finishJob(job, { ok, cancelled, error }) {
     job.dismissBtn.classList.remove("hidden");
     patchRecord(job.id, { status: "failed", completed: job.completed });
   }
+  drainQueue();
 }
 
 function appendError(job, message) {
@@ -738,6 +797,20 @@ listen("pluck://error", ({ payload }) => {
 listen("pluck://done", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
+});
+
+listen("pluck://paused", ({ payload }) => {
+  const job = jobs.get(payload.jobId);
+  if (!job) return;
+  job.statusEl.textContent = "Paused";
+  job.statusEl.classList.add("paused");
+  job.pauseBtn.classList.add("hidden");
+  job.cancelBtn.classList.add("hidden");
+  job.resumeBtn.classList.remove("hidden");
+  job.dismissBtn.classList.remove("hidden");
+  job.speedEl.textContent = "";
+  job.etaEl.textContent = "";
+  patchRecord(job.id, { status: "paused", completed: job.completed });
 });
 
 listen("pluck://cookies", ({ payload }) => {
@@ -1044,7 +1117,7 @@ async function downloadSelection() {
   const job = createJobCard(jobId, params, {
     titles: episodes.map((e) => e.title),
   });
-  await beginPluck(job, { fresh: true });
+  await enqueueJob(job, { fresh: true });
   showView("download");
 }
 
@@ -1099,6 +1172,30 @@ function showTerms() {
 termsAcceptBtn.addEventListener("click", acceptTerms);
 
 viewTermsBtn.addEventListener("click", showTerms);
+
+/* ---------- external links ---------- */
+
+const WEBSITE_URL = "https://www.xyruscode.com/software";
+const DISCORD_URL = "https://discord.com/users/423390522296500224";
+
+const websiteBtn = document.getElementById("website-btn");
+const discordBtn = document.getElementById("discord-btn");
+
+websiteBtn.addEventListener("click", () => {
+  try {
+    openUrl(WEBSITE_URL);
+  } catch (e) {
+    console.error("Failed to open website", e);
+  }
+});
+
+discordBtn.addEventListener("click", () => {
+  try {
+    openUrl(DISCORD_URL);
+  } catch (e) {
+    console.error("Failed to open Discord", e);
+  }
+});
 
 /* ---------- updater ---------- */
 

@@ -883,6 +883,16 @@ select {
   text-shadow: 0 0 6px rgba(255, 206, 90, 0.5);
 }
 
+.job-status.queued {
+  color: var(--text-dim);
+  text-shadow: none;
+}
+
+.job-status.paused {
+  color: var(--candy-amber-hi);
+  text-shadow: 0 0 6px rgba(255, 206, 90, 0.5);
+}
+
 .job-errors {
   margin-top: 8px;
   color: #ff8a8a;
@@ -920,6 +930,10 @@ select {
 
 .job-resume {
   color: var(--candy-green-hi);
+}
+
+.job-pause {
+  color: var(--candy-amber-hi);
 }
 
 .job-dismiss {

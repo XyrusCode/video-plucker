@@ -464,11 +464,13 @@ pub async fn start_pluck(
         .map_err(|e| e.to_string())?;
 
     let cancelled = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(false));
     state.0.lock().unwrap().insert(
         job_id,
         PluckJob {
             pid: child.pid(),
             cancelled: cancelled.clone(),
+            paused: paused.clone(),
         },
     );
 
@@ -488,19 +490,28 @@ pub async fn start_pluck(
                 }
                 CommandEvent::Terminated(payload) => {
                     let was_cancelled = cancelled.load(Ordering::SeqCst);
-                    let ok = payload.code == Some(0) && !was_cancelled;
-                    // a fully-finished pluck no longer needs its resume archive
-                    if ok {
-                        let _ = std::fs::remove_file(&archive_task);
+                    let was_paused = paused.load(Ordering::SeqCst);
+                    if was_paused {
+                        // Keep the archive so a resume continues where it left off.
+                        let _ = app_handle.emit(
+                            "pluck://paused",
+                            pluck::PausedPayload { job_id },
+                        );
+                    } else {
+                        let ok = payload.code == Some(0) && !was_cancelled;
+                        // a fully-finished pluck no longer needs its resume archive
+                        if ok {
+                            let _ = std::fs::remove_file(&archive_task);
+                        }
+                        let _ = app_handle.emit(
+                            "pluck://done",
+                            DonePayload {
+                                job_id,
+                                ok,
+                                cancelled: was_cancelled,
+                            },
+                        );
                     }
-                    let _ = app_handle.emit(
-                        "pluck://done",
-                        DonePayload {
-                            job_id,
-                            ok,
-                            cancelled: was_cancelled,
-                        },
-                    );
                     app_handle
                         .state::<PluckState>()
                         .0
@@ -521,6 +532,15 @@ pub fn cancel_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Str
     let jobs = state.0.lock().unwrap();
     let job = jobs.get(&job_id).ok_or("pluck not found")?;
     job.cancelled.store(true, Ordering::SeqCst);
+    pluck::kill_tree(job.pid);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), String> {
+    let jobs = state.0.lock().unwrap();
+    let job = jobs.get(&job_id).ok_or("pluck not found")?;
+    job.paused.store(true, Ordering::SeqCst);
     pluck::kill_tree(job.pid);
     Ok(())
 }

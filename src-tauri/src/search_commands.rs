@@ -93,11 +93,13 @@ pub async fn start_stream_pluck(
     // Register the job up front (pid 0 until the first episode spawns) so
     // cancel_pluck can flip the flag even during the initial resolve.
     let cancelled = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(false));
     app.state::<PluckState>().0.lock().unwrap().insert(
         job_id,
         PluckJob {
             pid: 0,
             cancelled: cancelled.clone(),
+            paused: paused.clone(),
         },
     );
 
@@ -114,6 +116,7 @@ pub async fn start_stream_pluck(
             quality,
             dest_dir,
             cancelled,
+            paused,
         )
         .await;
     });
@@ -132,6 +135,7 @@ async fn run_stream_batch(
     quality: String,
     dest_dir: String,
     cancelled: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 ) {
     let total = episodes.len() as u64;
     let finish = |ok: bool, was_cancelled: bool| {
@@ -174,7 +178,7 @@ async fn run_stream_batch(
     let mut any_done = false;
 
     for (i, ep) in episodes.iter().enumerate() {
-        if cancelled.load(Ordering::SeqCst) {
+        if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
             break;
         }
         let ordinal = i as u64 + 1;
@@ -276,7 +280,7 @@ async fn run_stream_batch(
             }
         }
 
-        if cancelled.load(Ordering::SeqCst) {
+        if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
             break;
         }
         if ep_ok {
@@ -287,6 +291,13 @@ async fn run_stream_batch(
     }
 
     let was_cancelled = cancelled.load(Ordering::SeqCst);
+    let was_paused = paused.load(Ordering::SeqCst);
+    if was_paused {
+        // Keep the archive so a resume skips already-finished episodes.
+        let _ = app.emit("pluck://paused", pluck::PausedPayload { job_id });
+        app.state::<PluckState>().0.lock().unwrap().remove(&job_id);
+        return;
+    }
     // Re-resolution is required on any resume, so the archive is disposable.
     let _ = std::fs::remove_file(&archive);
     finish(ok_all && any_done && !was_cancelled, was_cancelled);

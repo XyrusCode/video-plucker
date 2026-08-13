@@ -145,6 +145,28 @@ jobs:
           chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
           ls -la "$bin"
 
+      - name: Extract release notes
+        id: notes
+        shell: bash
+        run: |
+          version="${{ needs.check.outputs.version }}"
+          body=$(awk -v v="$version" '
+            BEGIN { found = 0 }
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ ("^## \\[" v "\\]")) { found = 1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$body" ]; then
+            body="No release notes available for v$version."
+          fi
+          {
+            echo "body<<EOF"
+            echo "$body"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -157,15 +179,7 @@ jobs:
           # release. The version comes from the check job, not a pushed tag.
           tagName: v${{ needs.check.outputs.version }}
           releaseName: "Video Plucker v${{ needs.check.outputs.version }}"
-          releaseBody: |
-            Pluck videos from YouTube, X (Twitter), and streaming sites.
-
-            Download the file for your platform below and install it. yt-dlp and
-            ffmpeg are bundled inside the app; no extra setup is required.
-
-            - Windows: `.exe` installer
-            - macOS: `.dmg` (unsigned; right-click the app and choose Open on first launch)
-            - Linux: `.deb` (Debian/Ubuntu)
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}

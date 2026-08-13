@@ -16,6 +16,7 @@ use url::Url;
 pub struct PluckJob {
     pub pid: u32,
     pub cancelled: Arc<AtomicBool>,
+    pub paused: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -157,6 +158,7 @@ pub fn run() {
             commands::fetch_metadata,
             commands::start_pluck,
             commands::cancel_pluck,
+            commands::pause_pluck,
             commands::import_cookie,
             commands::delete_cookie,
             commands::list_cookies,
