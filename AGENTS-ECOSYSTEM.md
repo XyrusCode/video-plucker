@@ -298,7 +298,7 @@ Video-Plucker/
 
 | App | Version | Location |
 |-----|---------|----------|
-| Android | 6.2.2 (v34) | `app/build.gradle.kts` |
+| Android | 6.2.3 (v35) | `app/build.gradle.kts` |
 | Desktop | 4.4.0 | `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml` |
 | Extension | 1.2.5 | `manifest.json` |
 | Tsubarashi | 0.1.1 | `Tsubarashi/app.json` + `Tsubarashi/package.json` |

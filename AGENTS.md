@@ -22,3 +22,20 @@
 - **Mirror URLs:** `https://releases.xyruscode.com/desktop/v<VERSION>/<asset>`
 - **Auth:** `${{ secrets.CLOUDFLARE_API_TOKEN }}` passed to `wrangler r2 object put` with `--remote` flag.
 - **Manual mirror (if CI is stuck):** `npx wrangler r2 object put "video-plucker-releases/desktop/v<VERSION>/<file>" --file <path> --remote`
+
+## Pending: AllAnime Desktop Fix
+
+AllAnime's episode source API now requires an `aaReq` crypto token (AES-GCM encrypted payload). The current `allanime.rs` extractor returns `AA_CRYPTO_MISSING` errors.
+
+**Potential fix:** Port the approach from [ani-cli-rs](https://github.com/vorlie/ani-cli-rs), which uses **Anikoto API + MegaPlay** instead of AllAnime directly:
+- Anikoto API: `https://anikotoapi.site/` (clean REST, no crypto)
+- MegaPlay: `https://megaplay.buzz/` (stream extraction)
+- No aaReq token required
+- AniList GraphQL for search: `https://graphql.anilist.co`
+
+**Implementation notes for later:**
+1. Search via AniList GraphQL (existing AllAnime search can be repurposed)
+2. Episodes via `GET anikotoapi.site/series/{id}`
+3. Stream via MegaPlay embed: fetch HTML → extract `data-id` → `GET megaplay.buzz/stream/getSources?id={dataId}`
+4. Required headers: `Referer: https://megaplay.buzz/`, `Origin: https://megaplay.buzz`
+5. KotoCDN domains: `megaplay.buzz`, `mewstream.buzz`, `kotocdn.site`
