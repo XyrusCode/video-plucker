@@ -8,6 +8,7 @@ YouTube, X/Twitter, TikTok, and (desktop-only) streaming sites.
 | **Android** | Kotlin + Jetpack Compose, Clean Architecture | `Video-Plucker-Android/` |
 | **Desktop** | Tauri v2 (Rust + vanilla HTML/CSS/JS) | `Video-Plucker-Desktop/` |
 | **Extension** | Chrome MV3 (vanilla JS), desktop-pairing only | `Video-Plucker-Extension/` |
+| **Tsubarashi** | Expo SDK 55 + React Native, glustack v5 + nativewind v5 | `Video-Plucker/tsubarashi/` (temp member) |
 
 App-specific instructions live in `Video-Plucker-Desktop/AGENTS.md` and
 `Video-Plucker-Android/CLAUDE.md`. This file covers ecosystem-wide rules and the
@@ -54,6 +55,23 @@ copy of yt-dlp — update the bundled copy in each app independently.
 
 Each app has its own independent version. There is no cross-app version coupling.
 Bump the version in the app-specific location only.
+
+### Tsubarashi build versioning (every build bumps patch)
+
+Each Tsubarashi build that goes out MUST bump the **patch** version by exactly one
+unless the user explicitly states it's a **major** or **minor** release. This lets
+Android detect it as an update instead of reinstalling the same version.
+
+- Default: `X.Y.Z` → `X.Y.(Z+1)` (e.g. `0.1.0` → `0.1.1`).
+- Minor: `X.Y.Z` → `X.(Y+1).0` — only when the user says "minor release".
+- Major: `X.Y.Z` → `(X+1).0.0` — only when the user says "major release".
+
+Version lives in TWO places for Tsubarashi, bump both in sync:
+`Tsubarashi/app.json` (`expo.version`) and `Tsubarashi/package.json`
+(`version`). EAS `appVersionSource: "remote"` already auto-increments the
+Android `versionCode` per build, so Android will treat each build as an update
+as long as the version string also bumps. Never re-ship a build with the same
+version that was already installed.
 
 ---
 
@@ -271,13 +289,16 @@ Video-Plucker/
 │   ├── src-tauri/tauri.conf.json      ← version + deep-link config
 │   ├── src-tauri/Cargo.toml           ← version + Rust deps
 │   └── ...
-└── Video-Plucker-Extension/            ← Chrome extension (MV3, desktop-pairing)
+├── Video-Plucker-Extension/            ← Chrome extension (MV3, desktop-pairing)
+│   └── ...
+└── Tsubarashi/                         ← temp member (Expo SDK 55 + React Native)
 ```
 
 ## Current Versions
 
 | App | Version | Location |
 |-----|---------|----------|
-| Android | 4.7.6 (v23) | `app/build.gradle.kts` |
+| Android | 6.2.2 (v34) | `app/build.gradle.kts` |
 | Desktop | 4.4.0 | `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml` |
 | Extension | 1.2.5 | `manifest.json` |
+| Tsubarashi | 0.1.1 | `Tsubarashi/app.json` + `Tsubarashi/package.json` |
