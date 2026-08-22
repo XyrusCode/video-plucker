@@ -1,4 +1,6 @@
 mod commands;
+mod engine;
+mod errors;
 mod extractors;
 mod pluck;
 mod search_commands;

@@ -2,7 +2,7 @@
     "$schema":  "https://schema.tauri.app/config/2",
     "productName":  "Video Plucker",
     "mainBinaryName":  "yt-plucker",
-    "version":  "4.12.0",
+    "version":  "4.13.0",
     "identifier":  "tech.xyruscode.videoplucker",
     "build":  {
                   "frontendDist":  "../src"
@@ -35,7 +35,7 @@
                                     "endpoints":  [
                                                       "https://github.com/XyrusCode/video-plucker/releases/latest/download/latest.json"
                                                   ],
-                                    "pubkey":  "REPLACE_WITH_GENERATED_PUBKEY",
+                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCRURGOEU2MjFDMEI4RQpSV1NPQ3h4aWp0KytCTkNOS0NIVFJQU3lmbWVJTkVCMExRVWhYb2hrbXlyVElzR3ZFcDJlNmR2Qgo=",
                                     "windows":  {
                                                     "installMode":  "basicUi"
                                                 }

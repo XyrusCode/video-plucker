@@ -906,6 +906,87 @@ select {
   color: var(--text-dim);
 }
 
+/* plain-language failure verdict (raw errors are hidden from the UI) */
+.job-failmsg {
+  margin-top: 9px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 122, 122, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 90, 90, 0.08);
+  color: #ffb3b3;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+/* ---------- queue-for-later view ---------- */
+#view-queue .plucks-head {
+  display: flex;
+  align-items: center;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+#view-queue .plucks-head-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+#queue-start-all-btn {
+  margin-left: auto;
+  padding: 4px 11px;
+  font-size: 0.78rem;
+}
+
+#queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(180deg, var(--panel), #1c2028);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 13px;
+  box-shadow: inset 0 1px 0 var(--bezel-hi), 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.queue-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.queue-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.queue-sub {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-row button {
+  padding: 5px 11px;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
 /* ---------- expand toggle + per-item list ---------- */
 .job-expand {
   padding: 2px 8px;

@@ -4,6 +4,33 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.13.0] - 2026-08-22
+
+### Added
+
+- Queue for later: failed downloads can be parked on a dedicated Queue tab
+  and restarted whenever you like — nothing auto-starts, and parked items
+  survive app restarts.
+- Report button on failed downloads opens a pre-filled GitHub issue, with
+  automatic duplicate detection pointing you at an existing report when one
+  already covers the same failure.
+
+### Changed
+
+- Failed downloads now show a plain-language explanation instead of raw
+  yt-dlp output (e.g. login-required sites point at the Cookie Manager).
+  Technical details still travel with every issue report.
+- Self-healing downloader: when a site breaks because the bundled yt-dlp got
+  outdated, Video Plucker updates it automatically in the background and
+  retries once.
+- AllAnime is greyed out in Search while broken upstream; LuciferDonghua
+  remains available.
+
+### Fixed
+
+- In-app updater now verifies update signatures correctly (the embedded
+  public key was a placeholder, which made silent updates fail).
+
 ## [4.5.0] - 2026-08-13
 
 ### Added
