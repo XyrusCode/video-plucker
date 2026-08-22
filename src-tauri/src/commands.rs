@@ -326,7 +326,7 @@ pub async fn fetch_metadata(
     if let Some(cf) = cookies_file_for_url(&app, &url) {
         args.extend(["--cookies".into(), cf]);
     }
-    args.push(url);
+    args.push(url.clone());
 
     let output = engine::ytdlp_command(&app)?
         .env("PYTHONIOENCODING", "utf-8")

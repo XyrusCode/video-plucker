@@ -66,7 +66,7 @@ pub fn worse(
     match (a, b) {
         (None, x) => x,
         (x, None) => x,
-        (Some(x), Some(y)) => Some(if y.kind.rank() >= x.kind.rank() { y } else { x }),
+        (Some(x), Some(y)) => Some(if y.0.rank() >= x.0.rank() { y } else { x }),
     }
 }
 
