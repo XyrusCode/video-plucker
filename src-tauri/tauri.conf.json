@@ -42,8 +42,9 @@
                                 }
                 },
     "bundle":  {
-                   "active":  true,
-                   "targets":  [
+                    "active":  true,
+                   "createUpdaterArtifacts":  true,
+                    "targets":  [
                                    "nsis"
                                ],
 "externalBin":  [
