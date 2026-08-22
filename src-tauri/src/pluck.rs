@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::errors::{self, FailureKind};
 use crate::sidecar;
 
 /// Directory where platform-specific cookie files are stored.
@@ -65,21 +66,73 @@ pub struct ItemDonePayload {
 #[serde(rename_all = "camelCase")]
 pub struct ErrorPayload {
     pub job_id: u64,
+    /// The raw yt-dlp line, kept for issue reports — the UI never shows it.
     pub message: String,
+    pub friendly: String,
+    pub kind: String,
 }
 
+/// Final job outcome. `failure_kind`/`friendly` are empty unless the job
+/// failed (not cancelled) — they carry the plain-language verdict the UI
+/// renders instead of a raw error dump.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DonePayload {
     pub job_id: u64,
     pub ok: bool,
     pub cancelled: bool,
+    #[serde(default)]
+    pub failure_kind: String,
+    #[serde(default)]
+    pub friendly: String,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PausedPayload {
     pub job_id: u64,
+}
+
+/// Transient status text ("Updating downloader…") shown in place of the
+/// regular status line while a self-heal runs.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusPayload {
+    pub job_id: u64,
+    pub message: String,
+}
+
+impl DonePayload {
+    pub fn ok(job_id: u64, ok: bool, cancelled: bool) -> Self {
+        Self {
+            job_id,
+            ok,
+            cancelled,
+            failure_kind: String::new(),
+            friendly: String::new(),
+        }
+    }
+
+    pub fn cancelled(job_id: u64) -> Self {
+        Self::ok(job_id, false, true)
+    }
+
+    pub fn failed(job_id: u64, worst: &Option<(FailureKind, String)>) -> Self {
+        let (kind, friendly) = match worst {
+            Some((k, f)) => (k.as_str().to_string(), f.clone()),
+            None => (
+                FailureKind::Other.as_str().to_string(),
+                errors::classified("download failed", None).friendly,
+            ),
+        };
+        Self {
+            job_id,
+            ok: false,
+            cancelled: false,
+            failure_kind: kind,
+            friendly,
+        }
+    }
 }
 
 pub fn build_args(
@@ -250,13 +303,21 @@ fn index(s: &str) -> Option<u64> {
     num(s).map(|f| f as u64)
 }
 
-pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throttle) {
+/// Parse one yt-dlp output line for a normal pluck. Returns the classified
+/// failure when the line was an ERROR line, so the caller can accumulate a
+/// job-level verdict.
+pub fn handle_line(
+    app: &AppHandle,
+    job_id: u64,
+    raw: &str,
+    throttle: &mut Throttle,
+) -> Option<(FailureKind, String)> {
     let line = raw.trim_end_matches(['\r', '\n']).trim();
 
     if let Some(rest) = line.strip_prefix("PROG|") {
         let p: Vec<&str> = rest.split('|').collect();
         if p.len() < 6 {
-            return;
+            return None;
         }
         let downloaded = num(p[1]);
         // total_bytes is often NA; fall back to the estimate
@@ -267,7 +328,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
         };
         let finished = percent.map(|pc| pc >= 100.0).unwrap_or(false);
         if !finished && !throttle.ready() {
-            return;
+            return None;
         }
         let _ = app.emit(
             "pluck://progress",
@@ -284,7 +345,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
     } else if let Some(rest) = line.strip_prefix("ITEM|") {
         let p: Vec<&str> = rest.splitn(3, '|').collect();
         if p.len() < 3 {
-            return;
+            return None;
         }
         let _ = app.emit(
             "pluck://item-start",
@@ -299,7 +360,7 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
     } else if let Some(rest) = line.strip_prefix("DONE|") {
         let p: Vec<&str> = rest.splitn(2, '|').collect();
         if p.len() < 2 {
-            return;
+            return None;
         }
         let _ = app.emit(
             "pluck://item-done",
@@ -310,35 +371,41 @@ pub fn handle_line(app: &AppHandle, job_id: u64, raw: &str, throttle: &mut Throt
             },
         );
     } else if line.starts_with("ERROR") {
+        let failure = errors::classified(line, None);
         let _ = app.emit(
             "pluck://error",
             ErrorPayload {
                 job_id,
                 message: line.to_string(),
+                friendly: failure.friendly.clone(),
+                kind: failure.kind.to_string(),
             },
         );
+        return Some((errors::kind_of(failure.kind), failure.friendly));
     }
+    None
 }
 
 /// Line handler for resolved-stream plucks. Unlike [`handle_line`], the item
 /// index comes from the batch ordinal we pass in (each episode is its own
 /// single-video yt-dlp run, so yt-dlp's own playlist index is always NA).
 /// yt-dlp's `ITEM|` lines are ignored — the caller emits `item-start` itself
-/// with the real episode title. Returns the output path when a `DONE|` line is
-/// seen, so the caller can remember the last file for "Open folder".
+/// with the real episode title. Returns `(output path on DONE|line,
+/// classified failure on ERROR|line)` so the caller can track both the last
+/// file for "Open folder" and an episode-level verdict.
 pub fn handle_stream_line(
     app: &AppHandle,
     job_id: u64,
     item_index: u64,
     raw: &str,
     throttle: &mut Throttle,
-) -> Option<String> {
+) -> (Option<String>, Option<(FailureKind, String)>) {
     let line = raw.trim_end_matches(['\r', '\n']).trim();
 
     if let Some(rest) = line.strip_prefix("PROG|") {
         let p: Vec<&str> = rest.split('|').collect();
         if p.len() < 6 {
-            return None;
+            return (None, None);
         }
         let downloaded = num(p[1]);
         let total = num(p[2]).or_else(|| num(p[3]));
@@ -348,7 +415,7 @@ pub fn handle_stream_line(
         };
         let finished = percent.map(|pc| pc >= 100.0).unwrap_or(false);
         if !finished && !throttle.ready() {
-            return None;
+            return (None, None);
         }
         let _ = app.emit(
             "pluck://progress",
@@ -365,7 +432,7 @@ pub fn handle_stream_line(
     } else if let Some(rest) = line.strip_prefix("DONE|") {
         let p: Vec<&str> = rest.splitn(2, '|').collect();
         if p.len() < 2 {
-            return None;
+            return (None, None);
         }
         let filepath = p[1].to_string();
         let _ = app.emit(
@@ -376,17 +443,21 @@ pub fn handle_stream_line(
                 filepath: filepath.clone(),
             },
         );
-        return Some(filepath);
+        return (Some(filepath), None);
     } else if line.starts_with("ERROR") {
+        let failure = errors::classified(line, None);
         let _ = app.emit(
             "pluck://error",
             ErrorPayload {
                 job_id,
                 message: line.to_string(),
+                friendly: failure.friendly.clone(),
+                kind: failure.kind.to_string(),
             },
         );
+        return (None, Some((errors::kind_of(failure.kind), failure.friendly)));
     }
-    None
+    (None, None)
 }
 
 /// Kill yt-dlp AND its child ffmpeg: CommandChild::kill() only terminates

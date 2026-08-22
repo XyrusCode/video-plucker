@@ -65,6 +65,12 @@ impl Extractor for AllAnime {
     fn label(&self) -> &'static str {
         "AllAnime"
     }
+    /// The episode-source API now demands an `aaReq` crypto token this client
+    /// doesn't implement, so every search dead-ends. Grey it out until the
+    /// Anikoto+MegaPlay replacement lands (see AGENTS.md).
+    fn available(&self) -> bool {
+        false
+    }
 
     async fn search(
         &self,

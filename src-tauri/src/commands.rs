@@ -6,8 +6,9 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandEvent;
-use tauri_plugin_shell::ShellExt;
 
+use crate::engine;
+use crate::errors::{self, FailureKind};
 use crate::pluck::{self, DonePayload, Throttle};
 use crate::{PluckJob, PluckState};
 
@@ -327,10 +328,7 @@ pub async fn fetch_metadata(
     }
     args.push(url);
 
-    let output = app
-        .shell()
-        .sidecar("yt-dlp")
-        .map_err(|e| e.to_string())?
+    let output = engine::ytdlp_command(&app)?
         .env("PYTHONIOENCODING", "utf-8")
         .args(args)
         .output()
@@ -344,7 +342,11 @@ pub async fn fetch_metadata(
             .find(|l| l.contains("ERROR"))
             .unwrap_or("yt-dlp could not read this URL")
             .to_string();
-        return Err(msg);
+        // Analyze failures get the same plain-language treatment as download
+        // failures; unknown causes keep the raw line since the user is
+        // debugging their input.
+        let (kind, friendly) = errors::classify(&msg, Some(&url));
+        return Err(if kind == FailureKind::Other { msg } else { friendly });
     }
 
     let v: Value = serde_json::from_slice(&output.stdout)
@@ -454,12 +456,9 @@ pub async fn start_pluck(
         cookies_file.as_deref(),
     )?;
 
-    let (mut rx, child) = app
-        .shell()
-        .sidecar("yt-dlp")
-        .map_err(|e| e.to_string())?
+    let (mut rx, child) = engine::ytdlp_command(&app)?
         .env("PYTHONIOENCODING", "utf-8")
-        .args(args)
+        .args(args.clone())
         .spawn()
         .map_err(|e| e.to_string())?;
 
@@ -478,50 +477,105 @@ pub async fn start_pluck(
     let archive_task = archive.clone();
     tauri::async_runtime::spawn(async move {
         let mut throttle = Throttle::new(Duration::from_millis(150));
-        while let Some(event) = rx.recv().await {
-            match event {
-                // progress arrives on stderr in quiet mode (--print enables it),
-                // so both streams are parsed identically
-                CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    for line in text.lines() {
-                        pluck::handle_line(&app_handle, job_id, line, &mut throttle);
-                    }
-                }
-                CommandEvent::Terminated(payload) => {
-                    let was_cancelled = cancelled.load(Ordering::SeqCst);
-                    let was_paused = paused.load(Ordering::SeqCst);
-                    if was_paused {
-                        // Keep the archive so a resume continues where it left off.
-                        let _ = app_handle.emit(
-                            "pluck://paused",
-                            pluck::PausedPayload { job_id },
-                        );
-                    } else {
-                        let ok = payload.code == Some(0) && !was_cancelled;
-                        // a fully-finished pluck no longer needs its resume archive
-                        if ok {
-                            let _ = std::fs::remove_file(&archive_task);
+        // One engine self-heal per job: on a stale-engine failure, download
+        // the current yt-dlp and rerun once. Pause/cancel never self-heal.
+        let mut healed = false;
+        'attempts: loop {
+            let mut worst: Option<(FailureKind, String)> = None;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    // progress arrives on stderr in quiet mode (--print enables it),
+                    // so both streams are parsed identically
+                    CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        for line in text.lines() {
+                            if let Some(failure) =
+                                pluck::handle_line(&app_handle, job_id, line, &mut throttle)
+                            {
+                                worst = errors::worse(worst, Some(failure));
+                            }
                         }
-                        let _ = app_handle.emit(
-                            "pluck://done",
-                            DonePayload {
-                                job_id,
-                                ok,
-                                cancelled: was_cancelled,
-                            },
-                        );
                     }
-                    app_handle
-                        .state::<PluckState>()
-                        .0
-                        .lock()
-                        .unwrap()
-                        .remove(&job_id);
+                    CommandEvent::Terminated(payload) => {
+                        let was_cancelled = cancelled.load(Ordering::SeqCst);
+                        let was_paused = paused.load(Ordering::SeqCst);
+                        if was_paused {
+                            // Keep the archive so a resume continues where it left off.
+                            let _ = app_handle.emit(
+                                "pluck://paused",
+                                pluck::PausedPayload { job_id },
+                            );
+                        } else {
+                            let ok = payload.code == Some(0) && !was_cancelled;
+                            if !ok
+                                && !was_cancelled
+                                && !healed
+                                && matches!(
+                                    worst.as_ref().map(|(k, _)| *k),
+                                    Some(FailureKind::StaleEngine)
+                                )
+                            {
+                                healed = true;
+                                let _ = app_handle.emit(
+                                    "pluck://status",
+                                    pluck::StatusPayload {
+                                        job_id,
+                                        message: "Updating downloader…".into(),
+                                    },
+                                );
+                                match engine::update_engine(&app_handle).await {
+                                    Ok(_) => {
+                                        if let Ok((next_rx, next_child)) =
+                                            engine::ytdlp_command(&app_handle)
+                                                .and_then(|c| {
+                                                    c.env("PYTHONIOENCODING", "utf-8")
+                                                        .args(args.clone())
+                                                        .spawn()
+                                                        .map_err(|e| e.to_string())
+                                                })
+                                        {
+                                            if let Some(j) = app_handle
+                                                .state::<PluckState>()
+                                                .0
+                                                .lock()
+                                                .unwrap()
+                                                .get_mut(&job_id)
+                                            {
+                                                j.pid = next_child.pid();
+                                            }
+                                            rx = next_rx;
+                                            continue 'attempts;
+                                        }
+                                    }
+                                    Err(_) => {}
+                                }
+                            }
+                            // a fully-finished pluck no longer needs its resume archive
+                            if ok {
+                                let _ = std::fs::remove_file(&archive_task);
+                            }
+                            let done = if ok {
+                                DonePayload::ok(job_id, true, false)
+                            } else if was_cancelled {
+                                DonePayload::cancelled(job_id)
+                            } else {
+                                DonePayload::failed(job_id, &worst)
+                            };
+                            let _ = app_handle.emit("pluck://done", done);
+                        }
+                        break;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
+            break;
         }
+        app_handle
+            .state::<PluckState>()
+            .0
+            .lock()
+            .unwrap()
+            .remove(&job_id);
     });
 
     Ok(())

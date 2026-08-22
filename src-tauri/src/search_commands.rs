@@ -13,8 +13,9 @@ use std::time::Duration;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandEvent;
-use tauri_plugin_shell::ShellExt;
 
+use crate::engine;
+use crate::errors::{self, FailureKind};
 use crate::extractors::{self, EpisodeRef, SearchOpts, SearchResult, SeriesDetail, SiteInfo, StreamOption};
 use crate::pluck::{self, DonePayload, ErrorPayload, ItemStartPayload, Throttle};
 use crate::{PluckJob, PluckState};
@@ -138,29 +139,34 @@ async fn run_stream_batch(
     paused: Arc<AtomicBool>,
 ) {
     let total = episodes.len() as u64;
-    let finish = |ok: bool, was_cancelled: bool| {
-        let _ = app.emit(
-            "pluck://done",
-            DonePayload {
-                job_id,
-                ok,
-                cancelled: was_cancelled,
-            },
-        );
+    // Job-level verdict: the most specific failure seen across all episodes.
+    let mut batch_worst: Option<(FailureKind, String)> = None;
+    let finish = |ok: bool, was_cancelled: bool, worst: &Option<(FailureKind, String)>| {
+        let done = if ok {
+            DonePayload::ok(job_id, true, false)
+        } else if was_cancelled {
+            DonePayload::cancelled(job_id)
+        } else {
+            DonePayload::failed(job_id, worst)
+        };
+        let _ = app.emit("pluck://done", done);
         app.state::<PluckState>().0.lock().unwrap().remove(&job_id);
     };
 
     let ex = match extractors::get(&site) {
         Some(e) => e,
         None => {
+            let f = errors::classified(&format!("unknown site: {site}"), None);
             let _ = app.emit(
                 "pluck://error",
                 ErrorPayload {
                     job_id,
                     message: format!("unknown site: {site}"),
+                    friendly: f.friendly,
+                    kind: f.kind.to_string(),
                 },
             );
-            finish(false, false);
+            finish(false, false, &batch_worst);
             return;
         }
     };
@@ -168,14 +174,27 @@ async fn run_stream_batch(
     let archive = match pluck::archive_path(&app, job_id) {
         Ok(a) => a.to_string_lossy().into_owned(),
         Err(e) => {
-            let _ = app.emit("pluck://error", ErrorPayload { job_id, message: e });
-            finish(false, false);
+            let f = errors::classified(&e, None);
+            let _ = app.emit(
+                "pluck://error",
+                ErrorPayload {
+                    job_id,
+                    message: e,
+                    friendly: f.friendly,
+                    kind: f.kind.to_string(),
+                },
+            );
+            finish(false, false, &batch_worst);
             return;
         }
     };
 
     let mut ok_all = true;
     let mut any_done = false;
+    // One engine self-heal per batch: the first stale-engine episode triggers
+    // an update and gets exactly one retry; later episodes run on the new
+    // engine anyway.
+    let mut healed = false;
 
     for (i, ep) in episodes.iter().enumerate() {
         if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
@@ -211,7 +230,11 @@ async fn run_stream_batch(
         let opts = match ex.resolve_streams(&eref).await {
             Ok(o) => o,
             Err(e) => {
-                emit_ep_error(&app, job_id, &ep.episode, &e.to_string());
+                let raw = e.to_string();
+                let (kind, friendly) = errors::classify(&raw, None);
+                batch_worst =
+                    errors::worse(batch_worst, Some((kind, friendly.clone())));
+                emit_ep_error(&app, job_id, &ep.episode, &raw, &friendly, kind.as_str());
                 ok_all = false;
                 continue;
             }
@@ -219,7 +242,17 @@ async fn run_stream_batch(
         let (stream, ytdlp_quality) = match pick_stream(&opts, &quality) {
             Some(x) => x,
             None => {
-                emit_ep_error(&app, job_id, &ep.episode, "no matching stream quality");
+                let (kind, friendly) = errors::classify("no matching stream quality", None);
+                batch_worst =
+                    errors::worse(batch_worst, Some((kind, friendly.clone())));
+                emit_ep_error(
+                    &app,
+                    job_id,
+                    &ep.episode,
+                    "no matching stream quality",
+                    &friendly,
+                    kind.as_str(),
+                );
                 ok_all = false;
                 continue;
             }
@@ -240,44 +273,100 @@ async fn run_stream_batch(
         ) {
             Ok(a) => a,
             Err(e) => {
-                emit_ep_error(&app, job_id, &ep.episode, &e);
+                let (kind, friendly) = errors::classify(&e, None);
+                batch_worst = errors::worse(batch_worst, Some((kind, friendly.clone())));
+                emit_ep_error(&app, job_id, &ep.episode, &e, &friendly, kind.as_str());
                 ok_all = false;
                 continue;
             }
         };
 
-        let spawn = app
-            .shell()
-            .sidecar("yt-dlp")
-            .and_then(|c| c.env("PYTHONIOENCODING", "utf-8").args(args).spawn());
-        let (mut rx, child) = match spawn {
+        let spawn = engine::ytdlp_command(&app).and_then(|c| {
+            c.env("PYTHONIOENCODING", "utf-8")
+                .args(args.clone())
+                .spawn()
+                .map_err(|e| e.to_string())
+        });
+        let (mut rx, mut child) = match spawn {
             Ok(v) => v,
             Err(e) => {
-                emit_ep_error(&app, job_id, &ep.episode, &e.to_string());
+                let (kind, friendly) = errors::classify(&e, None);
+                batch_worst = errors::worse(batch_worst, Some((kind, friendly.clone())));
+                emit_ep_error(&app, job_id, &ep.episode, &e, &friendly, kind.as_str());
                 ok_all = false;
                 continue;
             }
         };
-        // Point cancellation at the currently-running episode.
-        if let Some(j) = app.state::<PluckState>().0.lock().unwrap().get_mut(&job_id) {
-            j.pid = child.pid();
-        }
 
-        let mut throttle = Throttle::new(Duration::from_millis(150));
         let mut ep_ok = false;
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    for line in text.lines() {
-                        pluck::handle_stream_line(&app, job_id, ordinal, line, &mut throttle);
+        'episode_attempts: for _attempt in 0..2 {
+            // Point cancellation at the currently-running episode.
+            if let Some(j) = app.state::<PluckState>().0.lock().unwrap().get_mut(&job_id) {
+                j.pid = child.pid();
+            }
+
+            let mut throttle = Throttle::new(Duration::from_millis(150));
+            let mut ep_worst: Option<(FailureKind, String)> = None;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        for line in text.lines() {
+                            let (_filepath, failure) =
+                                pluck::handle_stream_line(&app, job_id, ordinal, line, &mut throttle);
+                            ep_worst = errors::worse(ep_worst, failure);
+                        }
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        ep_ok = payload.code == Some(0);
+                    }
+                    _ => {}
+                }
+            }
+
+            if !ep_ok && !ep_worst.is_some() {
+                ep_worst = Some((
+                    FailureKind::Other,
+                    "yt-dlp exited with an error".to_string(),
+                ));
+            }
+            batch_worst = errors::worse(batch_worst, ep_worst.clone());
+
+            if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
+                break;
+            }
+            if !ep_ok && !healed {
+                let stale = matches!(
+                    ep_worst.as_ref().map(|(k, _)| *k),
+                    Some(FailureKind::StaleEngine)
+                );
+                if stale {
+                    healed = true;
+                    let _ = app.emit(
+                        "pluck://status",
+                        pluck::StatusPayload {
+                            job_id,
+                            message: "Updating downloader…".into(),
+                        },
+                    );
+                    if engine::update_engine(&app).await.is_ok() {
+                        match engine::ytdlp_command(&app).and_then(|c| {
+                            c.env("PYTHONIOENCODING", "utf-8")
+                                .args(args.clone())
+                                .spawn()
+                                .map_err(|e| e.to_string())
+                        }) {
+                            Ok(next) => {
+                                rx = next.0;
+                                child = next.1;
+                                continue 'episode_attempts;
+                            }
+                            Err(_) => {}
+                        }
                     }
                 }
-                CommandEvent::Terminated(payload) => {
-                    ep_ok = payload.code == Some(0);
-                }
-                _ => {}
             }
+            break;
         }
 
         if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
@@ -300,15 +389,17 @@ async fn run_stream_batch(
     }
     // Re-resolution is required on any resume, so the archive is disposable.
     let _ = std::fs::remove_file(&archive);
-    finish(ok_all && any_done && !was_cancelled, was_cancelled);
+    finish(ok_all && any_done && !was_cancelled, was_cancelled, &batch_worst);
 }
 
-fn emit_ep_error(app: &AppHandle, job_id: u64, episode: &str, msg: &str) {
+fn emit_ep_error(app: &AppHandle, job_id: u64, episode: &str, msg: &str, friendly: &str, kind: &str) {
     let _ = app.emit(
         "pluck://error",
         ErrorPayload {
             job_id,
             message: format!("Episode {episode}: {msg}"),
+            friendly: friendly.to_string(),
+            kind: kind.to_string(),
         },
     );
 }

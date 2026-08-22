@@ -16,6 +16,7 @@
 
       <nav class="nav-tabs chrome">
         <button id="nav-download" class="nav-tab active">Downloader</button>
+        <button id="nav-queue" class="nav-tab">Queue</button>
         <button id="nav-search" class="nav-tab">Search</button>
       </nav>
 
@@ -78,6 +79,19 @@
           </div>
           <button id="pluck-btn" class="glossy-btn primary" disabled>Pluck</button>
         </section>
+      </div>
+
+      <!-- ============ Queue view (failed downloads parked for later) ============ -->
+      <div id="view-queue" class="hidden">
+        <section class="plucks-head">
+          <span class="plucks-head-title">Queued for later</span>
+          <button id="queue-start-all-btn" class="glossy-btn clear-history">Start all</button>
+        </section>
+        <p id="queue-empty" class="cookie-empty">
+          Nothing queued. When a download fails, press “Queue” to park it here and
+          try again whenever you like.
+        </p>
+        <div id="queue-list"></div>
       </div>
 
       <!-- ============ Search view (streaming sites) ============ -->

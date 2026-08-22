@@ -31,8 +31,13 @@ const cookieAddBtn = document.getElementById("cookie-add-btn");
 // nav + search view
 const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
+const navQueue = document.getElementById("nav-queue");
 const viewDownload = document.getElementById("view-download");
 const viewSearch = document.getElementById("view-search");
+const viewQueue = document.getElementById("view-queue");
+const queueList = document.getElementById("queue-list");
+const queueEmpty = document.getElementById("queue-empty");
+const queueStartAllBtn = document.getElementById("queue-start-all-btn");
 const siteSelect = document.getElementById("site-select");
 const searchInput = document.getElementById("search-input");
 const translationSelect = document.getElementById("translation-select");
@@ -55,6 +60,7 @@ const episodeList = document.getElementById("episode-list");
 
 let store = null;
 let plucksStore = null; // persisted pluck records, for resume after a crash
+let queueStore = null; // parked "queue for later" items from failed downloads
 let destDir = "";
 let currentMeta = null;
 let nextJobId = 1;
@@ -110,6 +116,7 @@ const TERMS_KEY = "video-plucker-terms-accepted";
 async function initSettings() {
   store = await load("settings.json", { autoSave: true });
   plucksStore = await load("plucks.json", { autoSave: true });
+  queueStore = await load("queue.json", { autoSave: true });
   destDir = (await store.get("destDir")) || (await downloadDir());
   const savedQuality = await store.get("quality");
   if (savedQuality) qualitySelect.value = savedQuality;
@@ -118,6 +125,7 @@ async function initSettings() {
   nextJobId = (await store.get("nextJobId")) || 1;
   renderDestDir();
   await restoreInterruptedPlucks();
+  await renderQueue();
   await renderCookies();
 }
 
@@ -373,6 +381,8 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
       <button class="job-cancel">Cancel</button>
       <button class="job-pause hidden">Pause</button>
       <button class="job-resume hidden">Resume</button>
+      <button class="job-queue hidden">Queue</button>
+      <button class="job-report hidden">Report</button>
       <button class="job-open hidden">Open folder</button>
       <button class="job-dismiss hidden" title="Remove">✕</button>
     </div>
@@ -399,6 +409,10 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     activeIndex: 0,
     lastFile: null,
     titles,
+    // failure bookkeeping (failure-UX overhaul)
+    rawErrors: [], // technical yt-dlp lines, only ever sent in issue reports
+    friendlyError: null, // plain-language verdict shown to the user
+    failureKind: null, // "login_required" | "stale_engine" | ...
     card,
     itemLine: card.querySelector(".job-item-line"),
     overallFill: card.querySelector(".bar.overall .bar-fill"),
@@ -412,6 +426,8 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     cancelBtn: card.querySelector(".job-cancel"),
     pauseBtn: card.querySelector(".job-pause"),
     resumeBtn: card.querySelector(".job-resume"),
+    queueBtn: card.querySelector(".job-queue"),
+    reportBtn: card.querySelector(".job-report"),
     openBtn: card.querySelector(".job-open"),
     dismissBtn: card.querySelector(".job-dismiss"),
     expandBtn: card.querySelector(".job-expand"),
@@ -455,6 +471,8 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   });
 
   job.resumeBtn.addEventListener("click", () => resumeJob(job));
+  job.queueBtn.addEventListener("click", () => queueForLater(job));
+  job.reportBtn.addEventListener("click", () => reportIssue(job));
   job.dismissBtn.addEventListener("click", async () => {
     await removeRecord(jobId);
     if (activeJob === job) activeJob = null;
@@ -525,8 +543,12 @@ async function beginPluck(job, { fresh }) {
   job.pauseBtn.classList.remove("hidden");
   job.pauseBtn.disabled = false;
   job.resumeBtn.classList.add("hidden");
+  job.queueBtn.classList.add("hidden");
+  job.reportBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
   job.dismissBtn.classList.add("hidden");
+  const failmsg = job.card.querySelector(".job-failmsg");
+  if (failmsg) failmsg.remove();
   job.errorsEl.classList.add("hidden");
   job.errorsEl.innerHTML = "";
 
@@ -666,10 +688,23 @@ async function restoreInterruptedPlucks() {
       await store.set("nextJobId", nextJobId);
     }
     job.cancelBtn.classList.add("hidden");
-    job.resumeBtn.classList.remove("hidden");
-    job.dismissBtn.classList.remove("hidden");
-    job.statusEl.textContent = "Interrupted — resume to continue";
-    job.statusEl.classList.add("cancelled");
+    if (rec.status === "failed") {
+      // A failure that outlived a restart keeps its Queue/Report actions.
+      job.rawErrors = (rec.rawErrors || "").split("\n").filter(Boolean);
+      job.failureKind = rec.failureKind || null;
+      job.friendlyError = rec.friendly || null;
+      job.statusEl.textContent = "Failed";
+      job.statusEl.classList.add("fail");
+      showFailMessage(job, job.friendlyError || "Download failed.");
+      job.queueBtn.classList.remove("hidden");
+      job.reportBtn.classList.remove("hidden");
+      job.dismissBtn.classList.remove("hidden");
+    } else {
+      job.resumeBtn.classList.remove("hidden");
+      job.dismissBtn.classList.remove("hidden");
+      job.statusEl.textContent = "Interrupted — resume to continue";
+      job.statusEl.classList.add("cancelled");
+    }
   }
 }
 
@@ -699,22 +734,53 @@ function finishJob(job, { ok, cancelled, error }) {
     job.statusEl.classList.add("cancelled");
     removeRecord(job.id);
   } else {
-    job.statusEl.textContent = "Failed — resume to retry";
-    job.statusEl.classList.add("fail");
+    // Failed: plain-language verdict only (raw lines are kept for reports),
+    // and "Queue for later" replaces retry as the primary action.
     if (error) appendError(job, error);
+    job.statusEl.textContent = "Failed";
+    job.statusEl.classList.add("fail");
+    showFailMessage(job, job.friendlyError || "Download failed.");
     if (job.lastFile) job.openBtn.classList.remove("hidden");
-    job.resumeBtn.classList.remove("hidden");
+    job.queueBtn.classList.remove("hidden");
+    job.reportBtn.classList.remove("hidden");
     job.dismissBtn.classList.remove("hidden");
-    patchRecord(job.id, { status: "failed", completed: job.completed });
+    patchRecord(job.id, {
+      status: "failed",
+      completed: job.completed,
+      failureKind: job.failureKind,
+      friendly: job.friendlyError,
+      rawErrors: job.rawErrors.join("\n"),
+    });
   }
   drainQueue();
 }
 
-function appendError(job, message) {
-  job.errorsEl.classList.remove("hidden");
+function showFailMessage(job, message) {
+  const old = job.card.querySelector(".job-failmsg");
+  if (old) old.remove();
   const line = document.createElement("div");
+  line.className = "job-failmsg";
   line.textContent = message;
-  job.errorsEl.appendChild(line);
+  job.card.appendChild(line);
+}
+
+function appendError(job, message, friendly = null, kind = null) {
+  // Technical errors are collected silently; the user sees the friendly
+  // verdict at finish time instead of a raw yt-dlp dump.
+  job.rawErrors.push(message);
+  if (friendly && (!job.friendlyError || rankFailureKind(kind) > rankFailureKind(job.failureKind))) {
+    job.friendlyError = friendly;
+    job.failureKind = kind;
+  }
+}
+
+function rankFailureKind(kind) {
+  switch (kind) {
+    case "login_required": return 3;
+    case "unsupported_content": return 2;
+    case "stale_engine": return 1;
+    default: return 0;
+  }
 }
 
 clearHistoryBtn.addEventListener("click", async () => {
@@ -791,12 +857,27 @@ listen("pluck://error", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
   if (job.isPlaylist && job.activeIndex) markItem(job, job.activeIndex, "failed");
-  appendError(job, payload.message);
+  appendError(job, payload.message, payload.friendly || null, payload.kind || null);
+});
+
+// Transient status text from the backend ("Updating downloader…" during a
+// self-heal) — shown without changing the status color class.
+listen("pluck://status", ({ payload }) => {
+  const job = jobs.get(payload.jobId);
+  if (!job) return;
+  job.statusEl.className = "job-status";
+  job.statusEl.textContent = payload.message;
 });
 
 listen("pluck://done", ({ payload }) => {
   const job = jobs.get(payload.jobId);
-  if (job) finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
+  if (!job) return;
+  // Backend verdict is authoritative when the frontend saw no error lines.
+  if (payload.failureKind && !job.failureKind) {
+    job.failureKind = payload.failureKind;
+    job.friendlyError = payload.friendly || null;
+  }
+  finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
 });
 
 listen("pluck://paused", ({ payload }) => {
@@ -823,17 +904,229 @@ listen("pluck://cookies", ({ payload }) => {
   job.errorsEl.appendChild(line);
 });
 
+/* ---------- queue for later ---------- */
+//
+// Failed downloads can be parked here instead of retrying immediately: the
+// user may be waiting on an app update that fixes whatever broke. Parked
+// items never auto-start; starting one goes through the normal FIFO.
+
+async function queueForLater(job) {
+  await queueStore.set(String(job.id), {
+    jobId: job.id,
+    params: job.params,
+    titles: job.titles,
+    completed: job.completed,
+    failureKind: job.failureKind,
+    friendly: job.friendlyError,
+    rawErrors: job.rawErrors.join("\n"),
+    parkedAt: Date.now(),
+  });
+  if (activeJob === job) activeJob = null;
+  removeFromQueue(job);
+  jobs.delete(job.id);
+  job.card.remove();
+  await removeRecord(job.id);
+  await renderQueue();
+}
+
+async function loadQueueEntries() {
+  try {
+    return await queueStore.entries();
+  } catch {
+    return [];
+  }
+}
+
+async function renderQueue() {
+  const entries = await loadQueueEntries();
+  navQueue.textContent = entries.length ? `Queue (${entries.length})` : "Queue";
+  queueList.innerHTML = "";
+  queueEmpty.classList.toggle("hidden", entries.length > 0);
+  queueStartAllBtn.classList.toggle("hidden", entries.length === 0);
+  // oldest first, matching how they failed
+  const sorted = entries
+    .map(([key, item]) => ({ key, item }))
+    .sort((a, b) => (a.item?.parkedAt || 0) - (b.item?.parkedAt || 0));
+  for (const { key, item } of sorted) {
+    if (!item || !item.params) continue;
+    const row = document.createElement("div");
+    row.className = "queue-row";
+    row.innerHTML = `
+      <div class="queue-info">
+        <span class="queue-title"></span>
+        <span class="queue-sub"></span>
+      </div>
+      <button class="glossy-btn primary queue-start">Start</button>
+      <button class="glossy-btn queue-delete">Delete</button>
+    `;
+    row.querySelector(".queue-title").textContent =
+      item.params.title || "Untitled download";
+    const bits = [
+      item.params.kind === "stream" ? `${item.params.episodes?.length || 1} episode(s)` : null,
+      item.params.quality ? qualityLabel(item.params.quality) : null,
+      item.friendly || "Failed earlier",
+    ].filter(Boolean);
+    row.querySelector(".queue-sub").textContent = bits.join(" · ");
+    row.querySelector(".queue-start").addEventListener("click", () =>
+      startQueued(key, item)
+    );
+    row.querySelector(".queue-delete").addEventListener("click", async () => {
+      await queueStore.delete(key);
+      await renderQueue();
+    });
+    queueList.appendChild(row);
+  }
+}
+
+function qualityLabel(q) {
+  switch (q) {
+    case "best": return "Best";
+    case "2160": return "2160p";
+    case "1440": return "1440p";
+    case "1080": return "1080p";
+    case "720": return "720p";
+    case "480": return "480p";
+    default: return q.toUpperCase();
+  }
+}
+
+async function startQueued(key, item) {
+  await queueStore.delete(key);
+  const jobId = nextJobId++;
+  await store.set("nextJobId", nextJobId);
+  const job = createJobCard(jobId, { ...item.params }, {
+    completed: 0,
+    titles: item.titles || [],
+  });
+  await enqueueJob(job, { fresh: true });
+  await renderQueue();
+}
+
+queueStartAllBtn.addEventListener("click", async () => {
+  const entries = await loadQueueEntries();
+  for (const [key, item] of entries) {
+    if (item && item.params) await startQueued(key, item);
+  }
+});
+
+/* ---------- issue reporting ---------- */
+
+const ISSUE_REPO = "XyrusCode/video-plucker";
+
+function platformForReport(url) {
+  const lower = (url || "").toLowerCase();
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return "YouTube";
+  if (lower.includes("twitter.com") || lower.includes("x.com")) return "X (Twitter)";
+  if (lower.includes("tiktok.com")) return "TikTok";
+  if (lower.includes("instagram.com")) return "Instagram";
+  if (lower.includes("facebook.com")) return "Facebook";
+  if (lower.includes("reddit.com")) return "Reddit";
+  if (lower.includes("vk.com") || lower.includes("vkvideo.ru")) return "VK";
+  if (lower.includes("luciferdonghua")) return "LuciferDonghua";
+  if (lower.includes("allanime")) return "AllAnime";
+  return "Unknown site";
+}
+
+// First 80 chars of an error with non-alphanumerics stripped — the same
+// fingerprint the mobile app matches against existing issues.
+function errorSignature(rawErrors) {
+  const raw = rawErrors[rawErrors.length - 1] || "";
+  return raw.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 80);
+}
+
+// Look for an open issue already covering this failure so users pile into
+// one thread instead of filing duplicate reports.
+async function findExistingIssue(rawErrors, platform) {
+  const signature = errorSignature(rawErrors);
+  const query = encodeURIComponent(
+    `repo:${ISSUE_REPO} is:issue is:open "${platform}" in:title`
+  );
+  try {
+    const res = await fetch(
+      `https://api.github.com/search/issues?q=${query}&sort=created&per_page=10`,
+      { headers: { Accept: "application/vnd.github+json" } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    for (const issue of data.items || []) {
+      const body = (issue.body || "").replace(/<[^>]+>/g, "").toLowerCase();
+      const title = (issue.title || "").toLowerCase();
+      if (
+        (signature && body.includes(signature)) ||
+        title.includes(platform.toLowerCase())
+      ) {
+        return issue.html_url;
+      }
+    }
+  } catch {
+    // offline / rate-limited: fall through to a fresh issue
+  }
+  return null;
+}
+
+async function reportIssue(job) {
+  let version = "";
+  try {
+    version = await window.__TAURI__.app.getVersion();
+  } catch {}
+
+  const platform = platformForReport(job.params.url);
+  const body = [
+    "**Automated report from Video Plucker**",
+    "",
+    `- App version: ${version}`,
+    `- Platform: ${platform}`,
+    `- Quality: ${job.params.quality}`,
+    `- Title: ${job.params.title || "(unknown)"}`,
+    `- URL: ${job.params.url || "(n/a)"}`,
+    "- Progress: playlist items completed before failure are not tracked here",
+    "",
+    "**Raw error output**",
+    "",
+    "```",
+    ...(job.rawErrors.length ? job.rawErrors.slice(-15) : ["(no captured errors)"]),
+    "```",
+  ].join("\n");
+
+  const existing = await findExistingIssue(job.rawErrors, platform);
+  let url;
+  if (existing) {
+    url = `${existing}#issuecomment-new`;
+  } else {
+    const params = new URLSearchParams({
+      title: `Download failed — ${platform}`,
+      body,
+    });
+    url = `https://github.com/${ISSUE_REPO}/issues/new?${params}`;
+  }
+  try {
+    openUrl(url);
+  } catch (e) {
+    console.error("Failed to open issue URL", e);
+  }
+}
+
 /* ---------- search view ---------- */
 
+
+/* ---------- view switching ---------- */
+
+const views = {
+  download: [navDownload, viewDownload],
+  queue: [navQueue, viewQueue],
+  search: [navSearch, viewSearch],
+};
+
 function showView(which) {
-  const search = which === "search";
-  viewSearch.classList.toggle("hidden", !search);
-  viewDownload.classList.toggle("hidden", search);
-  navSearch.classList.toggle("active", search);
-  navDownload.classList.toggle("active", !search);
+  for (const [name, [navBtn, viewEl]] of Object.entries(views)) {
+    const on = name === which;
+    viewEl.classList.toggle("hidden", !on);
+    navBtn.classList.toggle("active", on);
+  }
 }
 
 navDownload.addEventListener("click", () => showView("download"));
+navQueue.addEventListener("click", () => showView("queue"));
 navSearch.addEventListener("click", () => showView("search"));
 
 async function initSearchView() {
