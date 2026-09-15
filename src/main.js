@@ -32,9 +32,11 @@ const cookieAddBtn = document.getElementById("cookie-add-btn");
 const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
 const navQueue = document.getElementById("nav-queue");
+const navSettings = document.getElementById("nav-settings");
 const viewDownload = document.getElementById("view-download");
 const viewSearch = document.getElementById("view-search");
 const viewQueue = document.getElementById("view-queue");
+const viewSettings = document.getElementById("view-settings");
 const queueList = document.getElementById("queue-list");
 const queueEmpty = document.getElementById("queue-empty");
 const queueStartAllBtn = document.getElementById("queue-start-all-btn");
@@ -65,8 +67,13 @@ let destDir = "";
 let currentMeta = null;
 let nextJobId = 1;
 const jobs = new Map(); // jobId -> job state + DOM refs
-const jobQueue = []; // jobs waiting for the single download slot
-let activeJob = null; // job currently using the slot (running or paused)
+const jobQueue = []; // jobs waiting for download slots
+let activeJobs = new Set(); // currently running jobs (for parallel mode)
+
+// Get max concurrent downloads based on settings
+function getMaxConcurrentDownloads() {
+  return appSettings.downloadMode === "parallel" ? appSettings.maxConcurrentDownloads : 1;
+}
 
 // search state
 let currentResult = null; // the SearchResult being viewed in the detail panel
@@ -113,20 +120,62 @@ function fmtDuration(secs) {
 
 const TERMS_KEY = "video-plucker-terms-accepted";
 
+// Settings structure with defaults
+const DEFAULT_SETTINGS = {
+  destDir: null, // will be set to downloadDir() if not provided
+  quality: "best",
+  cookiesBrowser: "none",
+  downloadMode: "queue", // "queue" or "parallel"
+  maxConcurrentDownloads: 3,
+  autoUpdate: true,
+  nextJobId: 1
+};
+
+// Current settings state
+let appSettings = { ...DEFAULT_SETTINGS };
+
 async function initSettings() {
   store = await load("settings.json", { autoSave: true });
   plucksStore = await load("plucks.json", { autoSave: true });
   queueStore = await load("queue.json", { autoSave: true });
-  destDir = (await store.get("destDir")) || (await downloadDir());
-  const savedQuality = await store.get("quality");
-  if (savedQuality) qualitySelect.value = savedQuality;
-  const savedCookies = await store.get("cookiesBrowser");
-  if (savedCookies) cookiesSelect.value = savedCookies;
-  nextJobId = (await store.get("nextJobId")) || 1;
+  
+  // Load all settings with defaults
+  await loadSettings();
+  
+  // Apply loaded settings to UI
+  destDir = appSettings.destDir || (await downloadDir());
+  if (appSettings.destDir !== destDir) {
+    await saveSetting("destDir", destDir);
+  }
+  
+  qualitySelect.value = appSettings.quality;
+  cookiesSelect.value = appSettings.cookiesBrowser;
+  nextJobId = appSettings.nextJobId;
+  
   renderDestDir();
   await restoreInterruptedPlucks();
   await renderQueue();
   await renderCookies();
+}
+
+async function loadSettings() {
+  for (const [key, defaultValue] of Object.entries(DEFAULT_SETTINGS)) {
+    try {
+      const saved = await store.get(key);
+      appSettings[key] = saved !== null && saved !== undefined ? saved : defaultValue;
+    } catch {
+      appSettings[key] = defaultValue;
+    }
+  }
+}
+
+async function saveSetting(key, value) {
+  appSettings[key] = value;
+  await store.set(key, value);
+}
+
+async function getSettings() {
+  return { ...appSettings };
 }
 
 function renderDestDir() {
@@ -152,16 +201,16 @@ browseBtn.addEventListener("click", async () => {
   if (picked) {
     destDir = picked;
     renderDestDir();
-    await store.set("destDir", destDir);
+    await saveSetting("destDir", destDir);
   }
 });
 
 qualitySelect.addEventListener("change", async () => {
-  await store.set("quality", qualitySelect.value);
+  await saveSetting("quality", qualitySelect.value);
 });
 
 cookiesSelect.addEventListener("change", async () => {
-  await store.set("cookiesBrowser", cookiesSelect.value);
+  await saveSetting("cookiesBrowser", cookiesSelect.value);
 });
 
 function cookiesFromBrowser() {
@@ -475,7 +524,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   job.reportBtn.addEventListener("click", () => reportIssue(job));
   job.dismissBtn.addEventListener("click", async () => {
     await removeRecord(jobId);
-    if (activeJob === job) activeJob = null;
+    removeFromActiveJobs(job);
     removeFromQueue(job);
     jobs.delete(jobId);
     job.card.remove();
@@ -610,11 +659,21 @@ async function enqueueJob(job, { fresh }) {
 }
 
 function drainQueue() {
-  if (activeJob) return;
-  const entry = jobQueue.shift();
-  if (!entry) return;
-  activeJob = entry.job;
-  beginPluck(entry.job, { fresh: entry.fresh });
+  const maxConcurrent = getMaxConcurrentDownloads();
+  
+  // Start as many jobs as we can within our limit
+  while (activeJobs.size < maxConcurrent && jobQueue.length > 0) {
+    const entry = jobQueue.shift();
+    if (!entry) break;
+    
+    activeJobs.add(entry.job);
+    beginPluck(entry.job, { fresh: entry.fresh });
+  }
+}
+
+function removeFromActiveJobs(job) {
+  activeJobs.delete(job);
+  drainQueue(); // Try to start more jobs
 }
 
 function removeFromQueue(job) {
@@ -636,7 +695,7 @@ pluckBtn.addEventListener("click", async () => {
     cookiesFromBrowser: cookiesFromBrowser(),
   };
   const jobId = nextJobId++;
-  await store.set("nextJobId", nextJobId);
+  await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, params, {
     titles: isPlaylist ? currentMeta.entries : [],
   });
@@ -685,7 +744,7 @@ async function restoreInterruptedPlucks() {
     const job = createJobCard(rec.jobId, params, { completed: rec.completed || 0, titles });
     if (rec.jobId >= nextJobId) {
       nextJobId = rec.jobId + 1;
-      await store.set("nextJobId", nextJobId);
+      await saveSetting("nextJobId", nextJobId);
     }
     job.cancelBtn.classList.add("hidden");
     if (rec.status === "failed") {
@@ -716,7 +775,7 @@ function setOverall(job, itemFraction) {
 }
 
 function finishJob(job, { ok, cancelled, error }) {
-  if (activeJob === job) activeJob = null;
+  removeFromActiveJobs(job);
   job.cancelBtn.classList.add("hidden");
   job.pauseBtn.classList.add("hidden");
   job.speedEl.textContent = "";
@@ -921,7 +980,7 @@ async function queueForLater(job) {
     rawErrors: job.rawErrors.join("\n"),
     parkedAt: Date.now(),
   });
-  if (activeJob === job) activeJob = null;
+  removeFromActiveJobs(job);
   removeFromQueue(job);
   jobs.delete(job.id);
   job.card.remove();
@@ -993,7 +1052,7 @@ function qualityLabel(q) {
 async function startQueued(key, item) {
   await queueStore.delete(key);
   const jobId = nextJobId++;
-  await store.set("nextJobId", nextJobId);
+  await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, { ...item.params }, {
     completed: 0,
     titles: item.titles || [],
@@ -1115,6 +1174,7 @@ const views = {
   download: [navDownload, viewDownload],
   queue: [navQueue, viewQueue],
   search: [navSearch, viewSearch],
+  settings: [navSettings, viewSettings],
 };
 
 function showView(which) {
@@ -1128,6 +1188,7 @@ function showView(which) {
 navDownload.addEventListener("click", () => showView("download"));
 navQueue.addEventListener("click", () => showView("queue"));
 navSearch.addEventListener("click", () => showView("search"));
+navSettings.addEventListener("click", () => showView("settings"));
 
 async function initSearchView() {
   let sites;
@@ -1406,7 +1467,7 @@ async function downloadSelection() {
     itemCount,
   };
   const jobId = nextJobId++;
-  await store.set("nextJobId", nextJobId);
+  await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, params, {
     titles: episodes.map((e) => e.title),
   });
@@ -1508,19 +1569,16 @@ function getUpdater() {
 }
 
 async function initUpdater() {
-  // Load auto-update preference from store
+  // Load auto-update preference from settings
   try {
-    const saved = await store.get(AUTO_UPDATE_KEY);
-    if (saved !== undefined && saved !== null) {
-      autoUpdateCheck.checked = saved;
-    }
+    autoUpdateCheck.checked = appSettings.autoUpdate;
   } catch {
     // default is checked (set in HTML)
   }
 }
 
 autoUpdateCheck.addEventListener("change", async () => {
-  await store.set(AUTO_UPDATE_KEY, autoUpdateCheck.checked);
+  await saveSetting("autoUpdate", autoUpdateCheck.checked);
 });
 
 function showUpdateBanner(version, body) {
@@ -1622,6 +1680,9 @@ initSettings()
       checkForUpdates({ silent: true });
     }
 
+    // Initialize settings page
+    await initSettingsPage();
+
     // Check for a deep-link that arrived before the frontend was ready.
     return invoke("consume_deep_link").then((payload) => {
       if (payload) handleDeepLink(payload);
@@ -1631,3 +1692,82 @@ initSettings()
     analyzeError.textContent = `Failed to load settings: ${err}`;
     analyzeError.classList.remove("hidden");
   });
+/* ---------- settings page ---------- */
+
+const downloadModeSelect = document.getElementById("download-mode-select");
+const maxConcurrentSelect = document.getElementById("max-concurrent-select");
+const concurrentDownloadsRow = document.getElementById("concurrent-downloads-row");
+const settingsDestDir = document.getElementById("settings-dest-dir");
+const settingsBrowseBtn = document.getElementById("settings-browse-btn");
+const settingsAutoUpdateCheck = document.getElementById("settings-auto-update-check");
+const settingsCheckUpdatesBtn = document.getElementById("settings-check-updates-btn");
+const appVersionSpan = document.getElementById("app-version");
+const settingsWebsiteBtn = document.getElementById("settings-website-btn");
+const settingsDiscordBtn = document.getElementById("settings-discord-btn");
+
+async function initSettingsPage() {
+  // Load current settings into UI
+  downloadModeSelect.value = appSettings.downloadMode;
+  maxConcurrentSelect.value = appSettings.maxConcurrentDownloads.toString();
+  settingsAutoUpdateCheck.checked = appSettings.autoUpdate;
+  
+  // Update concurrent downloads visibility
+  updateConcurrentDownloadsVisibility();
+  
+  // Set destination directory
+  settingsDestDir.textContent = destDir;
+  settingsDestDir.title = destDir;
+
+  // Get app version
+  try {
+    const version = await invoke("get_app_version");
+    appVersionSpan.textContent = version;
+  } catch {
+    appVersionSpan.textContent = "Unknown";
+  }
+
+  // Event listeners
+  downloadModeSelect.addEventListener("change", async () => {
+    await saveSetting("downloadMode", downloadModeSelect.value);
+    updateConcurrentDownloadsVisibility();
+  });
+
+  maxConcurrentSelect.addEventListener("change", async () => {
+    await saveSetting("maxConcurrentDownloads", parseInt(maxConcurrentSelect.value));
+  });
+
+  settingsBrowseBtn.addEventListener("click", async () => {
+    const picked = await open({ directory: true, defaultPath: destDir });
+    if (picked) {
+      destDir = picked;
+      settingsDestDir.textContent = destDir;
+      settingsDestDir.title = destDir;
+      renderDestDir(); // Update main UI
+      await saveSetting("destDir", destDir);
+    }
+  });
+
+  settingsAutoUpdateCheck.addEventListener("change", async () => {
+    await saveSetting("autoUpdate", settingsAutoUpdateCheck.checked);
+    autoUpdateCheck.checked = settingsAutoUpdateCheck.checked; // Sync with main UI
+  });
+
+  settingsCheckUpdatesBtn.addEventListener("click", () => {
+    if (getUpdater()) {
+      checkForUpdates({ silent: false });
+    }
+  });
+
+  settingsWebsiteBtn.addEventListener("click", () => {
+    openUrl(WEBSITE_URL);
+  });
+
+  settingsDiscordBtn.addEventListener("click", () => {
+    openUrl(DISCORD_URL);
+  });
+}
+
+function updateConcurrentDownloadsVisibility() {
+  const isParallel = downloadModeSelect.value === "parallel";
+  concurrentDownloadsRow.classList.toggle("enabled", isParallel);
+}

@@ -617,3 +617,7 @@ pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Stri
     pluck::kill_tree(job.pid);
     Ok(())
 }
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}

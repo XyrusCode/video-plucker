@@ -18,6 +18,7 @@
         <button id="nav-download" class="nav-tab active">Downloader</button>
         <button id="nav-queue" class="nav-tab">Queue</button>
         <button id="nav-search" class="nav-tab">Search</button>
+        <button id="nav-settings" class="nav-tab">Settings</button>
       </nav>
 
       <!-- ============ Downloader view (paste a URL) ============ -->
@@ -162,6 +163,80 @@
             <ul id="episode-list" class="job-items well"></ul>
           </div>
         </section>
+      </div>
+
+      <!-- ============ Settings view ============ -->
+      <div id="view-settings" class="hidden">
+        <div class="settings-container">
+          <section class="settings-section">
+            <h2>Download Preferences</h2>
+            
+            <div class="setting-row">
+              <label class="setting-label">
+                Download Mode
+                <select id="download-mode-select">
+                  <option value="queue">Queue (one at a time)</option>
+                  <option value="parallel">Parallel (multiple downloads)</option>
+                </select>
+              </label>
+              <span class="setting-hint">Queue mode downloads one video at a time. Parallel mode downloads multiple videos simultaneously.</span>
+            </div>
+
+            <div class="setting-row" id="concurrent-downloads-row">
+              <label class="setting-label">
+                Max Concurrent Downloads
+                <select id="max-concurrent-select">
+                  <option value="2">2 downloads</option>
+                  <option value="3">3 downloads</option>
+                  <option value="4">4 downloads</option>
+                  <option value="5">5 downloads</option>
+                </select>
+              </label>
+              <span class="setting-hint">Number of videos to download simultaneously in parallel mode.</span>
+            </div>
+
+            <div class="setting-row">
+              <label class="setting-label">
+                Default Download Location
+                <div class="folder-picker">
+                  <span id="settings-dest-dir" title=""></span>
+                  <button id="settings-browse-btn" class="glossy-btn">Browse…</button>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h2>Update Settings</h2>
+            
+            <div class="setting-row">
+              <label class="setting-toggle">
+                <input type="checkbox" id="settings-auto-update-check" />
+                <span>Automatically check for updates on startup</span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <button id="settings-check-updates-btn" class="glossy-btn">Check for Updates Now</button>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h2>About</h2>
+            
+            <div class="setting-row">
+              <div class="version-info">
+                <span class="version-label">Version:</span>
+                <span id="app-version">Loading...</span>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <button id="settings-website-btn" class="glossy-btn">Visit Website</button>
+              <button id="settings-discord-btn" class="glossy-btn">Discord Support</button>
+            </div>
+          </section>
+        </div>
       </div>
 
       <section id="cookie-manager" class="cookie-manager chrome">

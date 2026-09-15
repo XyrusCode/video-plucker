@@ -164,6 +164,7 @@ pub fn run() {
             commands::import_cookie,
             commands::delete_cookie,
             commands::list_cookies,
+            commands::get_app_version,
             search_commands::list_sites,
             search_commands::search_content,
             search_commands::get_series_detail,
