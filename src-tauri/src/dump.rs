@@ -37,13 +37,15 @@ pub const DUMP_VERSION: u32 = 1;
 
 /// Pref keys the desktop app owns and can therefore round-trip.
 ///
-/// Deliberately excludes `cookies_*` and `cookie_file_*`. Those carry an absolute path from
-/// the exporting machine, which means nothing on a phone: `CookieResolver` would read it,
-/// find no file, and fall through. Absent is honest; a stale path looks present and lies.
-const EXPORTED_PREFS: &[(&str, &str)] = &[
-    ("auto_update", "autoUpdate"),
-    ("terms_accepted", "termsAccepted"),
-];
+/// `terms_accepted` is deliberately absent. The app keeps it in localStorage, not in the
+/// settings store, so there is nothing to export and importing it would write a key that
+/// nothing ever reads.
+///
+/// `cookies_*` and `cookie_file_*` are absent for a different reason: both are per-device, and
+/// `cookie_file_*` carries an absolute path from the exporting machine. Android's
+/// `CookieResolver` would read it, find no file, and fall through, while it looked configured.
+/// Cookie files travel as `cookieFiles` content, and each side derives its own path on arrival.
+const EXPORTED_PREFS: &[(&str, &str)] = &[("auto_update", "autoUpdate")];
 
 /// Quality ids the desktop engine understands. Android's `Quality` enum has one more
 /// (`image`) with no desktop equivalent; it is mapped to `best` rather than dropped so a
@@ -129,11 +131,22 @@ fn read_cookie_files(dir: &Path) -> BTreeMap<String, String> {
     out
 }
 
-/// Only flat, sane filenames are accepted back. Same rule as the Android reader: a name that
-/// could escape the cookies directory is refused outright rather than sanitised, because a
-/// mangled profile name silently stops matching any URL.
+/// Only flat, sane filenames are accepted back.
+///
+/// A whitelist, not a denylist. Rejecting `/`, `\` and `..` is not enough on Windows: a child
+/// path that carries a drive prefix but no root, such as `C:evil.txt`, *replaces* the path it
+/// is joined onto rather than nesting inside it, so it lands outside the cookies directory.
+/// `""` and `.` name the directory itself. A dump is a file the user chose, and choosing one
+/// is exactly the moment an attacker-supplied path arrives.
+///
+/// Dots are allowed inside a name because `sanitize_cookie_name` permits them (a profile named
+/// `my.site` is legitimate); they cannot traverse once no separator can appear.
 fn is_safe_cookie_file_name(name: &str) -> bool {
-    !name.contains('/') && !name.contains('\\') && !name.contains("..")
+    let Some(stem) = name.strip_suffix(".txt") else {
+        return false;
+    };
+    !stem.is_empty()
+        && stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
 /// Builds a dump from the app's on-disk state.
@@ -216,7 +229,10 @@ pub fn build_dump(
         cookie_files,
         queue,
     };
-    (serde_json::to_string_pretty(&dump).unwrap_or_default(), counts)
+    // Serialising this shape cannot fail, and a silent fallback would write an empty file
+    // while the caller reports a successful export of everything it counted.
+    let json = serde_json::to_string_pretty(&dump).expect("dump is plain owned data");
+    (json, counts)
 }
 
 /// The parked-list entries a restored dump produces, ready to write into the queue store.
@@ -415,15 +431,33 @@ mod tests {
     #[test]
     fn maps_prefs_to_the_keys_android_reads() {
         let dir = temp_dir("prefs");
-        let settings = json!({ "autoUpdate": false, "termsAccepted": true });
+        let settings = json!({ "autoUpdate": false });
         let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(dump["prefs"]["auto_update"], false);
-        assert_eq!(dump["prefs"]["terms_accepted"], true);
         // The destination folder is desktop-specific and points at a path that may not exist
         // on the receiving machine.
         assert!(dump["prefs"].get("destDir").is_none());
+    }
+
+    #[test]
+    fn does_not_carry_terms_acceptance() {
+        // The app keeps it in localStorage, so there is nothing in the settings store to
+        // export. Carrying it would mean writing a key on import that nothing reads.
+        let dir = temp_dir("terms");
+        let settings = json!({ "autoUpdate": true, "termsAccepted": true });
+        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[]);
+        let dump: Value = serde_json::from_str(&text).unwrap();
+        assert!(dump["prefs"].get("terms_accepted").is_none());
+    }
+
+    #[test]
+    fn still_carries_android_terms_acceptance_into_nothing() {
+        // Android writes it; desktop has nowhere to put it. Dropping an unknown-to-this-app
+        // key is the correct behaviour, not a failure.
+        let dump = json!({ "prefs": { "terms_accepted": true } });
+        assert!(restored_prefs(&dump).is_empty());
     }
 
     #[test]
@@ -552,6 +586,34 @@ mod tests {
     }
 
     #[test]
+    fn refuses_a_windows_drive_prefixed_cookie_file_name() {
+        // `C:evil.txt` has no separator, so a `/ \ ..` denylist lets it through — and
+        // PathBuf::push treats a path with a prefix but no root as a *replacement*, so it
+        // resolves to the drive's current directory rather than a file beside the others.
+        let dump = json!({ "cookieFiles": { "C:evil.txt": "escape" } });
+        assert!(restored_cookie_files(&dump).is_empty());
+    }
+
+    #[test]
+    fn refuses_a_cookie_file_name_that_is_not_a_txt_profile() {
+        // "" and "." name the directory itself, and a stray file type would be picked up by
+        // nothing.
+        let dump = json!({
+            "cookieFiles": { "": "x", ".": "x", "notes.md": "x", "x.txt": "good" }
+        });
+        let files = restored_cookie_files(&dump);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files.get("x.txt").map(String::as_str), Some("good"));
+    }
+
+    #[test]
+    fn accepts_a_dotted_profile_name() {
+        // sanitize_cookie_name permits dots, so `my.site.txt` is a real profile.
+        let dump = json!({ "cookieFiles": { "my.site.txt": "body" } });
+        assert_eq!(restored_cookie_files(&dump).len(), 1);
+    }
+
+    #[test]
     fn reads_a_cookie_file_written_by_the_phone() {
         // The real shape of the attachment: a Netscape file whose name is `x.txt` even
         // though the platform key is `twitter`.
@@ -573,10 +635,11 @@ mod tests {
         });
         let prefs = restored_prefs(&dump);
         assert_eq!(prefs["autoUpdate"], true);
-        assert_eq!(prefs["termsAccepted"], true);
         assert_eq!(prefs["lastNotifiedVersion"], "7.0.3");
-        // Browser opt-in and a WebView cookie header describe things this app has no concept
-        // of. Importing them would store values nothing ever reads.
+        // Terms acceptance lives in localStorage here, and a browser opt-in and a WebView
+        // cookie header describe things this app has no concept of. Importing them would
+        // store values nothing ever reads.
+        assert!(!prefs.contains_key("termsAccepted"));
         assert!(!prefs.contains_key("browser_opt_in"));
         assert!(!prefs.contains_key("cookies_twitter"));
     }

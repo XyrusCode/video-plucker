@@ -110,6 +110,10 @@ window.__TAURI__ = {
           return null;
         case "search_content":
           return [];
+        case "start_pluck":
+          // Recorded rather than stubbed so a test can assert on what would have been
+          // handed to yt-dlp, such as an empty -P from a restored queue item.
+          return { jobId: 99 };
         case "export_dump":
           return {
             prefsKeys: 2,
@@ -119,6 +123,9 @@ window.__TAURI__ = {
             appVersion: "4.8.0",
           };
         case "import_dump":
+          // Mirrors ImportResult in src-tauri/src/dump.rs, including the queue record's
+          // full field set. A stub with a thinner shape lets a frontend bug pass here that
+          // the real command would trip over.
           return {
             prefsKeys: 1,
             cookieFiles: 1,
@@ -129,7 +136,21 @@ window.__TAURI__ = {
             queue: [
               {
                 jobId: "restored-1",
-                params: { url: "https://youtu.be/x", quality: "1080", title: "Restored" },
+                params: {
+                  url: "https://youtu.be/x",
+                  quality: "1080",
+                  title: "Restored",
+                  // No destDir: the dump format has nowhere to put one, and the path the
+                  // exporting machine had would be wrong here. The frontend must supply it.
+                  destDir: "",
+                  playlistMode: false,
+                  itemCount: 1,
+                },
+                titles: [],
+                completed: 0,
+                failureKind: null,
+                friendly: "Restored from backup",
+                rawErrors: "",
                 parkedAt: 1,
               },
             ],

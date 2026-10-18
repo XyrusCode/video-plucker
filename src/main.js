@@ -745,8 +745,10 @@ async function beginPluck(job, { fresh }) {
 async function resumeJob(job) {
   job.completed = 0; // the archive is the source of truth; rebuild from events
   if (job.isPlaylist) buildItemRows(job);
-  if (activeJob === job) {
-    // Resuming a paused job: it already owns the download slot.
+  // A paused job still holds its download slot, so it must not be queued behind others.
+  // `activeJob` never existed; the set is `activeJobs`, so this threw a ReferenceError on
+  // every Resume press and no paused download could ever be restarted.
+  if (activeJobs.has(job.id)) {
     await beginPluck(job, { fresh: false });
   } else {
     await enqueueJob(job, { fresh: false });
@@ -1182,7 +1184,14 @@ async function startQueued(key, item) {
   await queueStore.delete(key);
   const jobId = nextJobId++;
   await saveSetting("nextJobId", nextJobId);
-  const job = createJobCard(jobId, { ...item.params }, {
+  const job = createJobCard(jobId, {
+    ...item.params,
+    // A restored item has no destDir: the dump format has nowhere to put one, and the path
+    // it would have carried refers to a folder on the other machine. Falling back to the
+    // current default is right; passing "" through would become `yt-dlp -P ""`, which
+    // resolves to whatever directory the app happened to start in.
+    destDir: item.params.destDir || destDir,
+  }, {
     completed: 0,
     titles: item.titles || [],
   });
@@ -1726,8 +1735,8 @@ function showUpdateBanner(version, body) {
   banner.innerHTML = `
     <span>Video Plucker <strong>v${version}</strong> is available.</span>
     <div class="update-actions">
-      <button id="update-install-btn" class="glossy-btn primary">Download &amp; Install</button>
-      <button id="update-dismiss-btn" class="glossy-btn">Dismiss</button>
+      <button id="update-install-btn" class="primary">Download &amp; Install</button>
+      <button id="update-dismiss-btn" class="ghost">Dismiss</button>
     </div>
   `;
   document.body.appendChild(banner);

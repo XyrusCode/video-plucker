@@ -189,6 +189,9 @@ main {
 }
 
 /* ---------- SectionLabel ---------- */
+/* SectionLabel: a bare dim label introducing a group. Part of the contract, mapped
+   here ahead of first use so the desktop app does not invent a different treatment when
+   the first list needs one. */
 .section-label {
   font-size: 0.78rem;
   font-weight: 500;
@@ -368,12 +371,6 @@ button.ghost-danger:hover:not(:disabled) {
 .view {
   display: flex;
   flex-direction: column;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-item);
 }
 
 .row {
@@ -761,6 +758,16 @@ input[type="checkbox"] {
   font-size: 0.75rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+/* A long speed or ETA string must be able to shrink rather than push the status out of
+   the row. */
+.job-speed,
+.job-eta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-status {

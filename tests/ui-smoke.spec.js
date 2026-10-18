@@ -215,6 +215,29 @@ test("import persists what the command returned", async ({ page }) => {
   expect(queued).toContain("restored-1");
 });
 
+test("a restored queue item downloads into the current folder, not an empty one", async ({
+  page,
+}) => {
+  // restored_queue_items emits destDir: "" because the dump format has nowhere to put one.
+  // Passed through untouched it becomes `yt-dlp -P ""`, which resolves to whatever
+  // directory the app happened to launch in.
+  await page.locator("#nav-settings").click();
+  await page.locator("#import-dump-btn").click();
+  await expect(page.locator("#dump-status")).toContainText("1 setting");
+
+  await page.locator("#nav-queue").click();
+  await page.locator(".queue-start").first().click();
+
+  const started = await page.evaluate(() => {
+    const call = window.__invokeLog.find((c) => c.cmd === "start_pluck");
+    return call?.args ?? null;
+  });
+  expect(started, "start_pluck was never invoked").not.toBeNull();
+  expect(started.destDir, "restored item kept an empty destDir").toBe(
+    "C:\\Users\\test\\Videos",
+  );
+});
+
 test("screenshots", async ({ page }, testInfo) => {
   // Doubles as the after-shot for the UI change, so the shot harness and the
   // regression harness stay one thing.
