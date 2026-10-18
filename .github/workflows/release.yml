@@ -118,11 +118,14 @@ jobs:
           curl -fL --retry 5 --retry-all-errors \
             "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
             -o "$bin/yt-dlp-${{ matrix.triple }}"
-          # ffmpeg: static Intel build from evermeet.cx
+          # ffmpeg: static Intel build. evermeet.cx, the previous source, now returns
+          # 410 Gone for getrelease, which took the whole matrix leg - and with it the R2
+          # mirror job, since mirror needs every leg to succeed - down with it. This is a
+          # GitHub-hosted asset, the same guarantee the Windows and Linux legs rely on, and
+          # it is a bare binary rather than a zip.
           curl -fL --retry 5 --retry-all-errors \
-            "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o "$RUNNER_TEMP/ffmpeg.zip"
-          unzip -o "$RUNNER_TEMP/ffmpeg.zip" -d "$RUNNER_TEMP/ffmpeg"
-          cp "$RUNNER_TEMP/ffmpeg/ffmpeg" "$bin/ffmpeg-${{ matrix.triple }}"
+            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64" \
+            -o "$bin/ffmpeg-${{ matrix.triple }}"
           chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
           ls -la "$bin"
 
@@ -187,6 +190,14 @@ jobs:
 
   mirror:
     needs: [release, check]
+    # Mirror whatever the release job actually produced, even when one matrix leg failed.
+    #
+    # This previously inherited the default `needs` behaviour, so a single failed leg skipped
+    # the mirror entirely: when the macOS sidecar URL went 410, the Windows .exe and the Linux
+    # .deb were built and published to GitHub and then never reached R2 at all, which is the
+    # only place the download page points. A platform that failed still 404s either way; the
+    # platforms that succeeded should not.
+    if: always() && needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download release assets
