@@ -31,7 +31,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 pub const DUMP_VERSION: u32 = 1;
 
@@ -48,10 +48,14 @@ const EXPORTED_PREFS: &[(&str, &str)] = &[
 /// Quality ids the desktop engine understands. Android's `Quality` enum has one more
 /// (`image`) with no desktop equivalent; it is mapped to `best` rather than dropped so a
 /// restored item still downloads as something.
-fn desktop_quality(id: &str) -> &'static str {
-    match id {
-        "best" | "2160" | "1440" | "1080" | "720" | "480" | "mp3" | "m4a" => id,
-        _ => "best",
+fn desktop_quality(id: &str) -> &str {
+    const KNOWN: [&str; 8] = [
+        "best", "2160", "1440", "1080", "720", "480", "mp3", "m4a",
+    ];
+    if KNOWN.contains(&id) {
+        id
+    } else {
+        "best"
     }
 }
 
@@ -71,7 +75,7 @@ pub struct DumpCounts {
 }
 
 #[derive(Serialize)]
-struct Dump<'a> {
+struct Dump {
     #[serde(rename = "dumpVersion")]
     dump_version: u32,
     #[serde(rename = "appVersion")]
