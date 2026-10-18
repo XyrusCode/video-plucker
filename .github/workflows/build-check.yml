@@ -36,3 +36,39 @@ jobs:
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check
+
+      - name: Cargo test
+        working-directory: src-tauri
+        # The Rust unit tests were never wired into CI, so every one of them had been
+        # dead weight: cookie matching, failure classification and the dump round-trip
+        # would all have failed silently on any PR.
+        run: cargo test
+
+  ui-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke test
+        # Enforces the shared UI contract in DESIGN.md: design tokens, the element ids
+        # main.js dereferences on boot, and that downloads stay inside the Pluck tab.
+        run: npx playwright test
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: test-results/
+          retention-days: 7

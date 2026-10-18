@@ -1,0 +1,12 @@
+{
+  "name": "video-plucker-desktop-tests",
+  "private": true,
+  "type": "module",
+  "description": "Test-only harness for the zero-build frontend. The shipped app has no package.json and no npm install step; nothing here is bundled into the binary.",
+  "scripts": {
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
