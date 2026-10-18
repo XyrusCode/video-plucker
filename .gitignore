@@ -13,3 +13,13 @@
 /build.ps1
 
 .wrangler/
+
+# Test-only frontend harness (see package.json). The shipped app has no npm
+# dependency; this exists so CI can run the Playwright smoke test.
+/node_modules/
+/test-results/
+/playwright-report/
+/screenshots/
+
+# Incremental graphify output; regenerate with `graphify update .`
+/graphify-out/

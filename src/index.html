@@ -8,49 +8,62 @@
   </head>
   <body>
     <main>
-      <header class="chrome">
-        <div class="logo">▶</div>
-        <h1>Video Plucker</h1>
-        <span class="tagline">download videos from YouTube, X, TikTok &amp; streaming sites</span>
+      <!-- BrandTopBar -->
+      <header class="brand-bar">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm2 4v8l6-4-6-4Z" />
+          </svg>
+        </div>
+        <span class="wordmark">Video Plucker</span>
+        <span class="brand-action"></span>
       </header>
 
-      <nav class="nav-tabs chrome">
-        <button id="nav-download" class="nav-tab active">Downloader</button>
-        <button id="nav-queue" class="nav-tab">Queue</button>
-        <button id="nav-search" class="nav-tab">Search</button>
-        <button id="nav-settings" class="nav-tab">Settings</button>
+      <!-- PillRow -->
+      <nav class="pill-row" aria-label="Sections">
+        <button id="nav-download" class="pill-chip active">Pluck</button>
+        <button id="nav-queue" class="pill-chip">Queue</button>
+        <button id="nav-search" class="pill-chip">Search</button>
+        <button id="nav-settings" class="pill-chip">Settings</button>
       </nav>
 
-      <!-- ============ Downloader view (paste a URL) ============ -->
-      <div id="view-download">
-        <section class="url-row">
+      <!-- ============ Pluck view ============ -->
+      <section id="view-download" class="view">
+        <div class="screen-header">
+          <div class="screen-text">
+            <h1 class="screen-title">Pluck</h1>
+            <p class="screen-sub">Paste a link to grab it</p>
+          </div>
+        </div>
+
+        <div class="url-row">
           <input
             id="url-input"
             type="text"
             placeholder="Paste a YouTube or X (Twitter) video or playlist URL…"
             spellcheck="false"
           />
-          <label id="playlist-toggle" class="hidden" title="Pluck the whole playlist">
+          <label id="playlist-toggle" class="playlist-toggle hidden" title="Pluck the whole playlist">
             <input type="checkbox" id="playlist-check" checked />
             Playlist
           </label>
-          <button id="analyze-btn" class="glossy-btn">Analyze</button>
-        </section>
+          <button id="analyze-btn">Analyze</button>
+        </div>
 
         <p id="analyze-error" class="error-text hidden"></p>
 
-        <section id="meta-card" class="hidden">
+        <div id="meta-card" class="hidden">
           <img id="meta-thumb" alt="" />
           <div class="meta-info">
             <h2 id="meta-title"></h2>
             <p id="meta-sub"></p>
             <ul id="meta-entries" class="hidden"></ul>
           </div>
-        </section>
+        </div>
 
-        <section class="options-row">
-          <label class="quality-label">
-            Quality
+        <div class="options-row">
+          <label class="field-label">
+            Format
             <select id="quality-select">
               <option value="best">Best available</option>
               <option value="2160">2160p (4K)</option>
@@ -62,7 +75,7 @@
               <option value="m4a">Audio only — M4A</option>
             </select>
           </label>
-          <label class="quality-label" title="Use a browser's login cookies to get past YouTube's bot check">
+          <label class="field-label" title="Use a browser's login cookies to get past YouTube's bot check">
             YouTube login
             <select id="cookies-select">
               <option value="none">None</option>
@@ -75,29 +88,56 @@
             </select>
           </label>
           <div class="folder-picker">
-            <span id="dest-dir" title=""></span>
-            <button id="browse-btn" class="glossy-btn">Browse…</button>
+            <span id="dest-dir" class="path-display" title=""></span>
+            <button id="browse-btn">Browse…</button>
           </div>
-          <button id="pluck-btn" class="glossy-btn primary" disabled>Pluck</button>
-        </section>
-      </div>
+          <button id="pluck-btn" class="primary" disabled>Pluck</button>
+        </div>
 
-      <!-- ============ Queue view (failed downloads parked for later) ============ -->
-      <div id="view-queue" class="hidden">
-        <section class="plucks-head">
-          <span class="plucks-head-title">Queued for later</span>
-          <button id="queue-start-all-btn" class="glossy-btn clear-history">Start all</button>
-        </section>
+        <!-- Downloads live under Pluck, matching the phone. -->
+        <div class="screen-header">
+          <div class="screen-text">
+            <h2 class="section-title">Downloads</h2>
+          </div>
+          <div class="screen-actions">
+            <button id="clear-history-btn" class="ghost ghost-danger">Clear finished</button>
+          </div>
+        </div>
+        <p id="plucks-empty" class="cookie-empty">
+          Nothing downloaded yet. Paste a link above and press Analyze.
+        </p>
+        <div id="plucks" class="list"></div>
+      </section>
+
+      <!-- ============ Queue view ============ -->
+      <section id="view-queue" class="view hidden">
+        <div class="screen-header">
+          <div class="screen-text">
+            <h1 class="screen-title">Queue</h1>
+            <p id="queue-sub" class="screen-sub">Parked downloads waiting for you</p>
+          </div>
+          <div class="screen-actions">
+            <button id="queue-start-all-btn" class="ghost">Start all</button>
+          </div>
+        </div>
+
         <p id="queue-empty" class="cookie-empty">
           Nothing queued. When a download fails, press “Queue” to park it here and
           try again whenever you like.
         </p>
-        <div id="queue-list"></div>
-      </div>
+        <div id="queue-list" class="list"></div>
+      </section>
 
       <!-- ============ Search view (streaming sites) ============ -->
-      <div id="view-search" class="hidden">
-        <section class="search-row">
+      <section id="view-search" class="view hidden">
+        <div class="screen-header">
+          <div class="screen-text">
+            <h1 class="screen-title">Search</h1>
+            <p class="screen-sub">Streaming sites the desktop app supports</p>
+          </div>
+        </div>
+
+        <div class="search-row">
           <select id="site-select" title="Which site to search"></select>
           <input
             id="search-input"
@@ -111,27 +151,26 @@
               <option value="dub">Dub</option>
             </select>
           </label>
-          <button id="search-btn" class="glossy-btn primary">Search</button>
-        </section>
+          <button id="search-btn" class="primary">Search</button>
+        </div>
 
         <p id="search-error" class="error-text hidden"></p>
 
         <section id="search-results" class="results-grid well hidden"></section>
 
-        <!-- Detail panel for a chosen result -->
         <section id="result-detail" class="hidden">
           <div class="detail-head">
             <img id="detail-poster" alt="" />
             <div class="detail-info">
               <h2 id="detail-title"></h2>
               <p id="detail-sub"></p>
-              <button id="detail-back" class="glossy-btn">← Back to results</button>
+              <button id="detail-back" class="ghost">← Back to results</button>
             </div>
           </div>
 
           <div class="detail-controls">
-            <label class="quality-label">
-              Quality
+            <label class="field-label">
+              Format
               <select id="stream-quality">
                 <option value="best">Best available</option>
                 <option value="1080">1080p</option>
@@ -141,13 +180,12 @@
                 <option value="m4a">Audio only — M4A</option>
               </select>
             </label>
-            <button id="stream-download" class="glossy-btn primary">Download</button>
+            <button id="stream-download" class="primary">Download</button>
           </div>
 
-          <!-- Series-only: season picker + episode batch selection -->
           <div id="series-picker" class="hidden">
             <div class="season-row">
-              <label class="quality-label">
+              <label class="field-label">
                 Season
                 <select id="season-select"></select>
               </label>
@@ -157,94 +195,115 @@
                 placeholder="Range, e.g. 5-12, 15"
                 spellcheck="false"
               />
-              <button id="ep-select-all" class="glossy-btn">Select all</button>
+              <button id="ep-select-all" class="ghost">Select all</button>
               <span id="ep-count" class="ep-count"></span>
             </div>
             <ul id="episode-list" class="job-items well"></ul>
           </div>
         </section>
-      </div>
+      </section>
 
       <!-- ============ Settings view ============ -->
-      <div id="view-settings" class="hidden">
-        <div class="settings-container">
-          <section class="settings-section">
-            <h2>Download Preferences</h2>
-            
-            <div class="setting-row">
-              <label class="setting-label">
-                Download Mode
-                <select id="download-mode-select">
-                  <option value="queue">Queue (one at a time)</option>
-                  <option value="parallel">Parallel (multiple downloads)</option>
-                </select>
-              </label>
-              <span class="setting-hint">Queue mode downloads one video at a time. Parallel mode downloads multiple videos simultaneously.</span>
-            </div>
+      <section id="view-settings" class="view hidden">
+        <div class="screen-header">
+          <div class="screen-text">
+            <h1 class="screen-title">Settings</h1>
+            <p class="screen-sub">Manage your app preferences and data.</p>
+          </div>
+        </div>
 
-            <div class="setting-row" id="concurrent-downloads-row">
-              <label class="setting-label">
-                Max Concurrent Downloads
-                <select id="max-concurrent-select">
-                  <option value="2">2 downloads</option>
-                  <option value="3">3 downloads</option>
-                  <option value="4">4 downloads</option>
-                  <option value="5">5 downloads</option>
-                </select>
-              </label>
-              <span class="setting-hint">Number of videos to download simultaneously in parallel mode.</span>
+        <div class="card">
+          <div class="card-head">
+            <div class="icon-chip accent" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.6a4 4 0 1 0 2 3.4V9h4V3h-6Z" /></svg>
             </div>
-
-            <div class="setting-row">
-              <label class="setting-label">
-                Default Download Location
-                <div class="folder-picker">
-                  <span id="settings-dest-dir" title=""></span>
-                  <button id="settings-browse-btn" class="glossy-btn">Browse…</button>
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section class="settings-section">
-            <h2>Update Settings</h2>
-            
-            <div class="setting-row">
-              <label class="setting-toggle">
-                <input type="checkbox" id="settings-auto-update-check" />
-                <span>Automatically check for updates on startup</span>
-              </label>
-            </div>
-
-            <div class="setting-row">
-              <button id="settings-check-updates-btn" class="glossy-btn">Check for Updates Now</button>
-            </div>
-          </section>
-
-          <section class="settings-section">
-            <h2>About</h2>
-            
-            <div class="setting-row">
-              <div class="version-info">
-                <span class="version-label">Version:</span>
-                <span id="app-version">Loading...</span>
+            <div class="grow">
+              <div class="section-header">
+                <span class="section-dot"></span>
+                <span class="section-title">Downloads</span>
               </div>
+              <p class="section-desc">Control how downloads behave when the connection drops.</p>
             </div>
+          </div>
 
-            <div class="setting-row">
-              <button id="settings-website-btn" class="glossy-btn">Visit Website</button>
-              <button id="settings-discord-btn" class="glossy-btn">Discord Support</button>
+          <div class="setting-row">
+            <label class="field-label">
+              Download mode
+              <select id="download-mode-select">
+                <option value="queue">Queue (one at a time)</option>
+                <option value="parallel">Parallel (multiple downloads)</option>
+              </select>
+            </label>
+            <span class="section-desc" style="padding-left: 0">
+              Queue mode downloads one video at a time. Parallel mode downloads several at once.
+            </span>
+          </div>
+
+          <div class="setting-row" id="concurrent-downloads-row">
+            <label class="field-label">
+              Max concurrent downloads
+              <select id="max-concurrent-select">
+                <option value="2">2 downloads</option>
+                <option value="3">3 downloads</option>
+                <option value="4">4 downloads</option>
+                <option value="5">5 downloads</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div class="folder-picker">
+              <span id="settings-dest-dir" class="path-display" title=""></span>
+              <button id="settings-browse-btn">Browse…</button>
             </div>
-          </section>
+          </div>
         </div>
-      </div>
 
-      <section id="cookie-manager" class="cookie-manager chrome">
-        <div class="cookie-head">
-          <span class="cookie-manager-title">Cookie Manager</span>
-          <span class="cookie-manager-hint">Name matches your URL (e.g. insta → instagram.com, x.com → twitter.com/x.com links, vk → vk.com/vk.ru/vkvideo.ru)</span>
+        <div class="card">
+          <div class="card-head">
+            <div class="icon-chip" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V4h2v5Z" /></svg>
+            </div>
+            <div class="grow">
+              <div class="section-header">
+                <span class="section-dot"></span>
+                <span class="section-title">Updates</span>
+              </div>
+              <p class="section-desc">Check for new versions and read release notes.</p>
+            </div>
+          </div>
+
+          <div class="toggle setting-divider">
+            <span class="toggle-text">
+              <span class="toggle-title">Auto-update</span>
+              <span class="toggle-desc">Check for new versions once per day when the app starts.</span>
+            </span>
+            <input type="checkbox" id="auto-update-check" checked />
+          </div>
+
+          <div class="card-actions">
+            <button id="check-updates-btn">Check for updates</button>
+          </div>
         </div>
-        <div class="cookie-body" id="cookie-body">
+
+        <div class="card">
+          <div class="card-head">
+            <div class="icon-chip" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.2 14.2L11 13V7h1.5v5.2l4.4 2.7-.7 1.3Z" /></svg>
+            </div>
+            <div class="grow">
+              <div class="section-header">
+                <span class="section-dot"></span>
+                <span class="section-title">Cookies</span>
+              </div>
+              <p class="section-desc">
+                Import a cookies.txt file per site so yt-dlp can download age-restricted or
+                private content. A profile named after a site serves any URL containing it, so
+                <code>x</code> covers x.com and twitter.com.
+              </p>
+            </div>
+          </div>
+
           <div class="cookie-add">
             <input
               id="cookie-name-input"
@@ -252,32 +311,68 @@
               placeholder="Set name, e.g. insta"
               spellcheck="false"
             />
-            <button id="cookie-add-btn" class="glossy-btn cookie-import">Import cookies.txt…</button>
+            <button id="cookie-add-btn">Import cookies.txt…</button>
+          </div>
+          <p id="cookie-error" class="error-text hidden"></p>
+          <div class="cookie-body" id="cookie-body" style="margin-top: 10px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="icon-chip" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm1 10.6V14h-2v-6h2v5.6l3.3 2-.9 1.7-3.4-2.1v-.6Z" /></svg>
+            </div>
+            <div class="grow">
+              <div class="section-header">
+                <span class="section-dot"></span>
+                <span class="section-title">Backup &amp; Restore</span>
+              </div>
+              <p class="section-desc">
+                Export your settings, site logins and download queue to a file, then import it on
+                another machine. The desktop and Android apps read the same format, so a dump
+                moves between either one. The dump contains live login cookies; keep the file
+                private. Importing replaces any cookie set with the same name, and a queued
+                playlist comes back as a single item.
+              </p>
+            </div>
+          </div>
+
+          <div class="card-actions">
+            <button id="export-dump-btn">Export dump</button>
+            <button id="import-dump-btn">Import dump</button>
+          </div>
+          <p id="dump-status" class="section-desc hidden" style="padding-left: 0"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="icon-chip" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 17h2v-6h-2v6Zm1-15a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm-1-11h2V7h-2v2Z" /></svg>
+            </div>
+            <div class="grow">
+              <div class="section-header">
+                <span class="section-dot"></span>
+                <span class="section-title">About</span>
+              </div>
+              <div class="version-row" style="margin-top: 4px">
+                <span class="version-label">Version</span>
+                <span id="app-version">Loading…</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-actions">
+            <button id="website-btn">Our software</button>
+            <button id="discord-btn">Discord support</button>
+            <button id="view-terms-btn">Terms of Use</button>
           </div>
         </div>
       </section>
-
-      <section id="plucks-head" class="plucks-head">
-        <span class="plucks-head-title">Downloads</span>
-        <button id="clear-history-btn" class="glossy-btn clear-history">Clear history</button>
-      </section>
-      <section id="plucks"></section>
-
-      <footer class="terms-footer">
-        <label class="auto-update-toggle" title="Automatically check for updates on startup">
-          <input type="checkbox" id="auto-update-check" checked />
-          Auto-update
-        </label>
-        <button id="check-updates-btn">Check for Updates</button>
-        <button id="view-terms-btn">Terms of Use</button>
-        <button id="website-btn">Our software</button>
-        <button id="discord-btn">Discord</button>
-      </footer>
     </main>
 
     <!-- Terms of Use modal (shown on first launch) -->
     <div id="terms-overlay" class="hidden">
-      <div class="terms-modal chrome">
+      <div class="terms-modal">
         <h2>Terms of Use</h2>
         <div class="terms-body">
           <p><strong>Video Plucker</strong> is a video download tool for personal use.</p>
@@ -301,7 +396,7 @@
           <p>These terms may be updated in future releases. Continued use of the software after an update constitutes acceptance of the revised terms.</p>
         </div>
         <div class="terms-actions">
-          <button id="terms-accept-btn" class="glossy-btn primary">I Accept</button>
+          <button id="terms-accept-btn" class="primary">I Accept</button>
         </div>
       </div>
     </div>

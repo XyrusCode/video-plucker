@@ -1,4 +1,5 @@
 mod commands;
+mod dump;
 mod engine;
 mod errors;
 mod extractors;
@@ -165,6 +166,8 @@ pub fn run() {
             commands::delete_cookie,
             commands::list_cookies,
             commands::get_app_version,
+            dump::export_dump,
+            dump::import_dump,
             search_commands::list_sites,
             search_commands::search_content,
             search_commands::get_series_detail,
