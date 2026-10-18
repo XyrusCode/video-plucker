@@ -1,6 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-const { open } = window.__TAURI__.dialog;
+const { open, save } = window.__TAURI__.dialog;
 const { load } = window.__TAURI__.store;
 const { revealItemInDir, openUrl } = window.__TAURI__.opener;
 const { downloadDir } = window.__TAURI__.path;
@@ -21,12 +21,19 @@ const destDirEl = document.getElementById("dest-dir");
 const browseBtn = document.getElementById("browse-btn");
 const pluckBtn = document.getElementById("pluck-btn");
 const plucksEl = document.getElementById("plucks");
+const plucksEmpty = document.getElementById("plucks-empty");
 const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 // Cookie manager elements
 const cookieBody = document.getElementById("cookie-body");
 const cookieNameInput = document.getElementById("cookie-name-input");
 const cookieAddBtn = document.getElementById("cookie-add-btn");
+const cookieError = document.getElementById("cookie-error");
+
+// Backup & restore
+const exportDumpBtn = document.getElementById("export-dump-btn");
+const importDumpBtn = document.getElementById("import-dump-btn");
+const dumpStatus = document.getElementById("dump-status");
 
 // nav + search view
 const navDownload = document.getElementById("nav-download");
@@ -39,6 +46,7 @@ const viewQueue = document.getElementById("view-queue");
 const viewSettings = document.getElementById("view-settings");
 const queueList = document.getElementById("queue-list");
 const queueEmpty = document.getElementById("queue-empty");
+const queueSub = document.getElementById("queue-sub");
 const queueStartAllBtn = document.getElementById("queue-start-all-btn");
 const siteSelect = document.getElementById("site-select");
 const searchInput = document.getElementById("search-input");
@@ -154,6 +162,7 @@ async function initSettings() {
   
   renderDestDir();
   await restoreInterruptedPlucks();
+  renderPlucksEmptyState();
   await renderQueue();
   await renderCookies();
 }
@@ -219,7 +228,101 @@ function cookiesFromBrowser() {
   return v;
 }
 
+/* ---------- backup & restore ---------- */
+
+function setDumpStatus(msg) {
+  dumpStatus.textContent = msg || "";
+  dumpStatus.classList.toggle("hidden", !msg);
+}
+
+/**
+ * Writes a dump whose shape the Android app reads unchanged.
+ *
+ * The filename mirrors SettingsDump.suggestedFileName so a file that lands in
+ * a downloads folder is self-describing whichever app it came from.
+ */
+async function exportDump() {
+  setDumpStatus("");
+  exportDumpBtn.disabled = true;
+  try {
+    const version = appVersionSpan.textContent || "backup";
+    const suggested = `video-plucker-dump-${version}-${Date.now()}.json`;
+    const target = await save({
+      defaultPath: suggested,
+      filters: [{ name: "Video Plucker dump", extensions: ["json"] }],
+    });
+    if (!target) return;
+    const parked = await loadQueueEntries();
+    const counts = await invoke("export_dump", {
+      path: target,
+      settings: appSettings,
+      parked,
+    });
+    const skipped = counts.skippedQueueItems
+      ? ` ${counts.skippedQueueItems} streaming-site item(s) were left out; they cannot be replayed as a URL.`
+      : "";
+    setDumpStatus(
+      `Exported ${counts.prefsKeys} setting(s), ${counts.cookieFiles} cookie set(s) and ${counts.queueItems} queued item(s).${skipped}`,
+    );
+  } catch (err) {
+    setDumpStatus(`Export failed: ${err}`);
+  } finally {
+    exportDumpBtn.disabled = false;
+  }
+}
+
+/**
+ * Imports a dump produced by either app.
+ *
+ * Two things the Rust side cannot do for us. Cookie files are written by the command
+ * because they live outside the settings store, but the settings store itself is a
+ * frontend store, so the returned prefs have to be written back through it here. And
+ * parked items are merged rather than replaced: the Android app replaces its queue on
+ * import because it owns the whole list, but doing that here would silently empty
+ * someone's downloads the moment they picked a file.
+ */
+async function importDump() {
+  setDumpStatus("");
+  importDumpBtn.disabled = true;
+  try {
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "Video Plucker dump", extensions: ["json"] }],
+    });
+    if (!picked) return;
+
+    const result = await invoke("import_dump", { path: picked });
+    for (const [key, value] of Object.entries(result.prefs ?? {})) {
+      await saveSetting(key, value);
+    }
+    for (const item of result.queue ?? []) {
+      await queueStore.set(String(item.jobId), item);
+    }
+
+    await loadSettings();
+    qualitySelect.value = appSettings.quality;
+    cookiesSelect.value = appSettings.cookiesBrowser;
+    await renderQueue();
+    await renderCookies();
+
+    const from = result.appVersion ? ` (from ${result.appVersion})` : "";
+    setDumpStatus(
+      `Restored ${result.prefsKeys} setting(s), ${result.cookieFiles} cookie set(s) and ${result.queueItems} queued item(s)${from}. Restart to pick up the settings change.`,
+    );
+  } catch (err) {
+    setDumpStatus(`Import failed: ${err}`);
+  } finally {
+    importDumpBtn.disabled = false;
+  }
+}
+
 /* ---------- cookie manager ---------- */
+
+/** Cookie failures render next to the cookie list, not in the Pluck tab's error line. */
+function setCookieError(msg) {
+  cookieError.textContent = msg;
+  cookieError.classList.toggle("hidden", !msg);
+}
 
 async function renderCookies() {
   let entries;
@@ -233,21 +336,21 @@ async function renderCookies() {
     const row = document.createElement("div");
     row.className = "cookie-row";
     const label = document.createElement("span");
-    label.className = "cookie-label";
+    label.className = "cookie-name";
     label.title = `${name} cookies — matches URLs containing "${name}"`;
     label.textContent = name;
     const status = document.createElement("span");
-    status.className = "cookie-status loaded";
+    status.className = "cookie-status";
     status.textContent = "Saved";
     const clear = document.createElement("button");
-    clear.className = "glossy-btn cookie-clear";
+    clear.className = "ghost ghost-danger";
     clear.textContent = "Clear";
     clear.addEventListener("click", async () => {
+      setCookieError("");
       try {
         await invoke("delete_cookie", { name });
       } catch (err) {
-        analyzeError.textContent = `Failed to clear ${name} cookies: ${err}`;
-        analyzeError.classList.remove("hidden");
+        setCookieError(`Failed to clear ${name} cookies: ${err}`);
       }
       await renderCookies();
     });
@@ -264,9 +367,9 @@ async function renderCookies() {
 
 async function importCookie() {
   const name = cookieNameInput.value.trim();
+  setCookieError("");
   if (!name) {
-    analyzeError.textContent = "Type a name for this cookie set first (e.g. insta).";
-    analyzeError.classList.remove("hidden");
+    setCookieError("Type a name for this cookie set first (e.g. insta).");
     return;
   }
   const selected = await open({
@@ -278,10 +381,11 @@ async function importCookie() {
     const savedAs = await invoke("import_cookie", { name, sourcePath: selected });
     cookieNameInput.value = "";
     await renderCookies();
-    analyzeError.textContent = savedAs === name ? "" : `Saved as "${savedAs}".`;
+    // A profile name is sanitised before it reaches disk, so "VK Video" lands as "vk_video".
+    // Saying so beats a row that appears under a name the user did not type.
+    if (savedAs !== name) setCookieError(`Saved as "${savedAs}".`);
   } catch (err) {
-    analyzeError.textContent = `Failed to import "${name}" cookies: ${err}`;
-    analyzeError.classList.remove("hidden");
+    setCookieError(`Failed to import "${name}" cookies: ${err}`);
   }
 }
 
@@ -422,18 +526,20 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   const itemCount = params.itemCount || 1;
 
   const card = document.createElement("div");
-  card.className = "job-card";
+  card.className = "job-card flat-row";
   card.innerHTML = `
     <div class="job-head">
       <button class="job-expand hidden" title="Show items">▸</button>
       <span class="job-title"></span>
-      <button class="job-cancel">Cancel</button>
-      <button class="job-pause hidden">Pause</button>
-      <button class="job-resume hidden">Resume</button>
-      <button class="job-queue hidden">Queue</button>
-      <button class="job-report hidden">Report</button>
-      <button class="job-open hidden">Open folder</button>
-      <button class="job-dismiss hidden" title="Remove">✕</button>
+      <span class="job-actions">
+        <button class="job-cancel">Cancel</button>
+        <button class="job-pause hidden">Pause</button>
+        <button class="job-resume hidden">Resume</button>
+        <button class="job-queue hidden">Queue</button>
+        <button class="job-report hidden">Report</button>
+        <button class="job-open hidden">Open folder</button>
+        <button class="job-dismiss hidden" title="Remove">✕</button>
+      </span>
     </div>
     <div class="job-item-line hidden"></div>
     <div class="bar overall"><div class="bar-fill"></div></div>
@@ -528,6 +634,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     removeFromQueue(job);
     jobs.delete(jobId);
     job.card.remove();
+    renderPlucksEmptyState();
     drainQueue();
   });
   job.openBtn.addEventListener("click", () => {
@@ -859,7 +966,13 @@ clearHistoryBtn.addEventListener("click", async () => {
       jobs.delete(id);
     }
   }
+  renderPlucksEmptyState();
 });
+
+/** The Pluck tab's downloads list needs its own empty state: it is no longer a global strip. */
+function renderPlucksEmptyState() {
+  plucksEmpty.classList.toggle("hidden", jobs.size > 0);
+}
 
 /* ---------- backend events ---------- */
 
@@ -984,6 +1097,7 @@ async function queueForLater(job) {
   removeFromQueue(job);
   jobs.delete(job.id);
   job.card.remove();
+  renderPlucksEmptyState();
   await removeRecord(job.id);
   await renderQueue();
 }
@@ -996,27 +1110,42 @@ async function loadQueueEntries() {
   }
 }
 
-async function renderQueue() {
+/**
+ * Parked queue entries, oldest first.
+ *
+ * Both the list and "Start all" read from here. They used to iterate
+ * `entries()` directly while the list sorted by parkedAt, so the batch
+ * started in a different order than the one on screen.
+ */
+async function sortedQueueEntries() {
   const entries = await loadQueueEntries();
-  navQueue.textContent = entries.length ? `Queue (${entries.length})` : "Queue";
-  queueList.innerHTML = "";
-  queueEmpty.classList.toggle("hidden", entries.length > 0);
-  queueStartAllBtn.classList.toggle("hidden", entries.length === 0);
-  // oldest first, matching how they failed
-  const sorted = entries
+  return entries
     .map(([key, item]) => ({ key, item }))
     .sort((a, b) => (a.item?.parkedAt || 0) - (b.item?.parkedAt || 0));
+}
+
+async function renderQueue() {
+  const sorted = await sortedQueueEntries();
+  const count = sorted.filter(({ item }) => item?.params).length;
+  queueSub.textContent = count
+    ? `${count} parked ${count === 1 ? "download" : "downloads"}, oldest first`
+    : "Parked downloads waiting for you";
+  queueList.innerHTML = "";
+  queueEmpty.classList.toggle("hidden", count > 0);
+  queueStartAllBtn.classList.toggle("hidden", count === 0);
   for (const { key, item } of sorted) {
     if (!item || !item.params) continue;
     const row = document.createElement("div");
-    row.className = "queue-row";
+    row.className = "queue-row flat-row";
     row.innerHTML = `
       <div class="queue-info">
         <span class="queue-title"></span>
         <span class="queue-sub"></span>
       </div>
-      <button class="glossy-btn primary queue-start">Start</button>
-      <button class="glossy-btn queue-delete">Delete</button>
+      <span class="job-actions">
+        <button class="queue-start">Start</button>
+        <button class="ghost ghost-danger queue-delete">Delete</button>
+      </span>
     `;
     row.querySelector(".queue-title").textContent =
       item.params.title || "Untitled download";
@@ -1062,9 +1191,14 @@ async function startQueued(key, item) {
 }
 
 queueStartAllBtn.addEventListener("click", async () => {
-  const entries = await loadQueueEntries();
-  for (const [key, item] of entries) {
-    if (item && item.params) await startQueued(key, item);
+  queueStartAllBtn.disabled = true;
+  try {
+    // Oldest first, the same order the list shows.
+    for (const { key, item } of await sortedQueueEntries()) {
+      if (item && item.params) await startQueued(key, item);
+    }
+  } finally {
+    queueStartAllBtn.disabled = false;
   }
 });
 
@@ -1182,6 +1316,7 @@ function showView(which) {
     const on = name === which;
     viewEl.classList.toggle("hidden", !on);
     navBtn.classList.toggle("active", on);
+    navBtn.setAttribute("aria-current", on ? "page" : "false");
   }
 }
 
@@ -1699,17 +1834,12 @@ const maxConcurrentSelect = document.getElementById("max-concurrent-select");
 const concurrentDownloadsRow = document.getElementById("concurrent-downloads-row");
 const settingsDestDir = document.getElementById("settings-dest-dir");
 const settingsBrowseBtn = document.getElementById("settings-browse-btn");
-const settingsAutoUpdateCheck = document.getElementById("settings-auto-update-check");
-const settingsCheckUpdatesBtn = document.getElementById("settings-check-updates-btn");
 const appVersionSpan = document.getElementById("app-version");
-const settingsWebsiteBtn = document.getElementById("settings-website-btn");
-const settingsDiscordBtn = document.getElementById("settings-discord-btn");
 
 async function initSettingsPage() {
   // Load current settings into UI
   downloadModeSelect.value = appSettings.downloadMode;
   maxConcurrentSelect.value = appSettings.maxConcurrentDownloads.toString();
-  settingsAutoUpdateCheck.checked = appSettings.autoUpdate;
   
   // Update concurrent downloads visibility
   updateConcurrentDownloadsVisibility();
@@ -1747,24 +1877,8 @@ async function initSettingsPage() {
     }
   });
 
-  settingsAutoUpdateCheck.addEventListener("change", async () => {
-    await saveSetting("autoUpdate", settingsAutoUpdateCheck.checked);
-    autoUpdateCheck.checked = settingsAutoUpdateCheck.checked; // Sync with main UI
-  });
-
-  settingsCheckUpdatesBtn.addEventListener("click", () => {
-    if (getUpdater()) {
-      checkForUpdates({ silent: false });
-    }
-  });
-
-  settingsWebsiteBtn.addEventListener("click", () => {
-    openUrl(WEBSITE_URL);
-  });
-
-  settingsDiscordBtn.addEventListener("click", () => {
-    openUrl(DISCORD_URL);
-  });
+  exportDumpBtn.addEventListener("click", exportDump);
+  importDumpBtn.addEventListener("click", importDump);
 }
 
 function updateConcurrentDownloadsVisibility() {
