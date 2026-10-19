@@ -4,6 +4,26 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.9.0] - 2026-10-19
+
+### Changed
+- **The desktop app is a desktop app.** The 4.8.0 mirror of the phone layout is replaced by a
+  workbench: a left rail for the four destinations, Downloads and Queue as tables with a sticky
+  header, Settings as two panes, and a status bar that reports engine state, active count,
+  throughput, the destination folder and the version.
+- **Frameless window on Windows.** The title bar carries the brand and the minimise, maximise
+  and close controls. Close still hides to the tray. macOS and Linux keep their native
+  decorations.
+- **`DESIGN.md` is independent.** It is no longer a mapping of the Android contract. Desktop and
+  Android now each own their own design; they share only the name, logo, accent hue and dump
+  format.
+- **Two reds, on purpose.** `--accent` (`#FF2D55`) marks, `--accent-fill` (`#E01E45`) carries
+  white text, because white on the brand red is 3.64:1 and fails AA.
+- **Status is a word in a fixed column**, not a shape, and no text is uppercase.
+
+### Fixed
+- Failure text uses its own red, so a failure never reads as a button.
+- Icons are drawn SVG in one stroke weight, not Unicode glyphs.
 ## [4.8.0] - 2026-10-18
 
 ### Added
