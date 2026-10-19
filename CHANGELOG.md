@@ -4,7 +4,7 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.12.0] - 2026-10-19
+## [4.14.0] - 2026-10-19
 
 ### Added
 - **A Saved tab.** The videos you saved on YouTube, X, TikTok and VK, read with the cookies you
@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removal cannot be confirmed without reading the whole list again.
 - The HttpOnly cookies these sites need are read out of the imported cookies.txt. They look like
   comments in that file, and a reader that skips comments skips exactly the cookies that matter.
+- The version is 4.14.0 and not 4.12.0: 4.10.0, 4.12.0 and 4.13.0 are already taken by the
+  releases of the old numbering, and the release workflow skips a version that has a release.
 
 ## [4.11.0] - 2026-10-19
 
