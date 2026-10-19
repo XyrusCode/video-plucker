@@ -4,6 +4,23 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.12.0] - 2026-10-19
+
+### Added
+- **A Saved tab.** The videos you saved on YouTube, X, TikTok and VK, read with the cookies you
+  already imported for those sites. One tile per video, with the site, the author and a Pluck
+  button. A site you have no login for is never read and never offered, so the filter cannot lead
+  to an empty list that looks like a bug. One site refusing does not hide the others.
+- **YouTube lists.** Watch Later, Liked videos, and your own playlists, when YouTube is
+  connected.
+
+### Notes
+- Read-only, on purpose. Removing a video from these lists means calling each site's private
+  endpoint, and every one of them answers with success whether or not it did anything, so a
+  removal cannot be confirmed without reading the whole list again.
+- The HttpOnly cookies these sites need are read out of the imported cookies.txt. They look like
+  comments in that file, and a reader that skips comments skips exactly the cookies that matter.
+
 ## [4.11.0] - 2026-10-19
 
 ### Added

@@ -43,6 +43,7 @@ const dumpStatus = document.getElementById("dump-status");
 const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
 const navQueue = document.getElementById("nav-queue");
+const navSaved = document.getElementById("nav-saved");
 const navSettings = document.getElementById("nav-settings");
 const railActiveCount = document.getElementById("rail-active-count");
 
@@ -55,6 +56,7 @@ const statusVersion = document.getElementById("status-version");
 const viewDownload = document.getElementById("view-download");
 const viewSearch = document.getElementById("view-search");
 const viewQueue = document.getElementById("view-queue");
+const viewSaved = document.getElementById("view-saved");
 const viewSettings = document.getElementById("view-settings");
 const queueList = document.getElementById("queue-list");
 const queueEmpty = document.getElementById("queue-empty");
@@ -1903,11 +1905,171 @@ async function reportIssue(job) {
 /* ---------- search view ---------- */
 
 
+/* ---------- saved view ---------- */
+
+const SITE_LABELS = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  twitter: "X",
+  vk: "VK",
+};
+
+const savedSiteSelect = document.getElementById("saved-site-select");
+const savedListSelect = document.getElementById("saved-list-select");
+const savedListField = document.getElementById("saved-list-field");
+const savedSummary = document.getElementById("saved-summary");
+const savedError = document.getElementById("saved-error");
+const savedGrid = document.getElementById("saved-grid");
+const savedEmpty = document.getElementById("saved-empty");
+const savedRefreshBtn = document.getElementById("saved-refresh-btn");
+
+let savedItems = [];
+let savedConnected = [];
+let savedLists = [];
+let savedLoaded = false;
+
+/**
+ * Read the saved videos of every site the user has a login for.
+ *
+ * A site without a login is never read and never offered, so the filter
+ * cannot lead to an empty list that looks like a bug.
+ */
+async function loadSaved(force = false) {
+  if (savedLoaded && !force) return;
+  savedRefreshBtn.disabled = true;
+  savedError.classList.add("hidden");
+  savedSummary.textContent = "Reading your saved videos…";
+  try {
+    const listId = savedListSelect.value || "WL";
+    const snapshot = await invoke("fetch_saved", { youtubeListId: listId });
+    savedItems = snapshot.items || [];
+    savedConnected = snapshot.connectedSites || [];
+    renderSavedSites();
+    await loadSavedLists();
+    renderSavedItems();
+    const failures = snapshot.failures || {};
+    const messages = Object.values(failures);
+    if (messages.length) {
+      savedError.textContent = messages.join("\n");
+      savedError.classList.remove("hidden");
+    }
+    savedLoaded = true;
+  } catch (err) {
+    savedError.textContent = String(err);
+    savedError.classList.remove("hidden");
+  } finally {
+    savedRefreshBtn.disabled = false;
+  }
+}
+
+async function loadSavedLists() {
+  if (!savedConnected.includes("youtube")) {
+    savedLists = [];
+    savedListField.hidden = true;
+    return;
+  }
+  try {
+    savedLists = (await invoke("list_youtube_lists")) || [];
+  } catch {
+    savedLists = [];
+  }
+  savedListField.hidden = savedLists.length === 0;
+  // The list the user picked is kept, so a refresh does not move them back
+  // to Watch Later.
+  const current = savedListSelect.value;
+  savedListSelect.innerHTML = "";
+  for (const list of savedLists) {
+    const opt = document.createElement("option");
+    opt.value = list.id;
+    opt.textContent = list.label;
+    savedListSelect.appendChild(opt);
+  }
+  if (savedLists.some((list) => list.id === current)) {
+    savedListSelect.value = current;
+  }
+}
+
+function renderSavedSites() {
+  const current = savedSiteSelect.value;
+  savedSiteSelect.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "All";
+  savedSiteSelect.appendChild(all);
+  for (const site of savedConnected) {
+    const opt = document.createElement("option");
+    opt.value = site;
+    opt.textContent = SITE_LABELS[site] || site;
+    savedSiteSelect.appendChild(opt);
+  }
+  savedSiteSelect.value = savedConnected.includes(current) ? current : "";
+  savedSiteSelect.disabled = savedConnected.length < 2;
+}
+
+function renderSavedItems() {
+  const site = savedSiteSelect.value;
+  const items = site ? savedItems.filter((i) => i.site === site) : savedItems;
+  savedGrid.innerHTML = "";
+  for (const item of items) savedGrid.appendChild(createSavedTile(item));
+  savedEmpty.classList.toggle("hidden", items.length > 0);
+  savedSummary.textContent = items.length
+    ? `${items.length} saved ${items.length === 1 ? "video" : "videos"}`
+    : "";
+}
+
+function createSavedTile(item) {
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.innerHTML = `
+    <div class="tile-thumb">
+      <img class="tile-img" alt="" />
+    </div>
+    <div class="tile-body">
+      <span class="tile-title"></span>
+      <span class="tile-sub"></span>
+      <div class="tile-foot">
+        <button class="tile-pluck">Pluck</button>
+      </div>
+    </div>
+  `;
+  const img = el.querySelector(".tile-img");
+  if (item.thumbnailUrl) {
+    img.src = item.thumbnailUrl;
+    img.addEventListener("error", () => img.classList.add("hidden"));
+  } else {
+    img.classList.add("hidden");
+  }
+  el.querySelector(".tile-title").textContent = item.title;
+  el.querySelector(".tile-sub").textContent = [
+    item.author,
+    SITE_LABELS[item.site] || item.site,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const pluck = el.querySelector(".tile-pluck");
+  pluck.addEventListener("click", async () => {
+    pluck.disabled = true;
+    pluck.textContent = "Plucked";
+    await startPluck(item.url, {
+      kind: "video",
+      title: item.title,
+      entryCount: null,
+      entries: [],
+    });
+  });
+  return el;
+}
+
+savedRefreshBtn.addEventListener("click", () => loadSaved(true));
+savedSiteSelect.addEventListener("change", renderSavedItems);
+savedListSelect.addEventListener("change", () => loadSaved(true));
+
 /* ---------- view switching ---------- */
 
 const views = {
   download: [navDownload, viewDownload],
   queue: [navQueue, viewQueue],
+  saved: [navSaved, viewSaved],
   search: [navSearch, viewSearch],
   settings: [navSettings, viewSettings],
 };
@@ -1924,6 +2086,12 @@ function showView(which) {
 
 navDownload.addEventListener("click", () => showView("download"));
 navQueue.addEventListener("click", () => showView("queue"));
+navSaved.addEventListener("click", () => {
+  showView("saved");
+  // Read the list once per session, not on every visit. The Refresh button
+  // is the way back to the network.
+  loadSaved();
+});
 navSearch.addEventListener("click", () => showView("search"));
 navSettings.addEventListener("click", () => showView("settings"));
 

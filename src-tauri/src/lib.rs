@@ -1,3 +1,4 @@
+mod bookmarks;
 mod commands;
 mod dump;
 mod engine;
@@ -167,6 +168,8 @@ pub fn run() {
             commands::delete_cookie,
             commands::list_cookies,
             commands::get_app_version,
+            bookmarks::fetch_saved,
+            bookmarks::list_youtube_lists,
             dump::export_dump,
             dump::import_dump,
             search_commands::list_sites,

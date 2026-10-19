@@ -857,6 +857,20 @@ tr.item-row td:first-child {
   margin-top: var(--space-2);
 }
 
+/* ---------- the saved view (DESIGN.md §6.8) ---------- */
+
+.saved-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.saved-bar .field-hint {
+  margin-left: auto;
+  text-align: right;
+}
+
 /* ---------- cookie rows ---------- */
 
 .cookie-body {

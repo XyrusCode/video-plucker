@@ -120,10 +120,41 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.11.0";
+          return "4.12.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;
+        case "list_youtube_lists":
+          return [
+            { id: "WL", label: "Watch Later", builtIn: true },
+            { id: "LL", label: "Liked videos", builtIn: true },
+          ];
+        case "fetch_saved":
+          return {
+            items: [
+              {
+                id: "saved1",
+                site: "youtube",
+                url: "https://www.youtube.com/watch?v=saved1",
+                title: "A Saved Video",
+                author: "A Channel",
+                thumbnailUrl: null,
+                durationSeconds: 120,
+              },
+              {
+                id: "saved2",
+                site: "twitter",
+                url: "https://x.com/i/status/2",
+                title: "A Saved Post",
+                author: "Someone (@someone)",
+                thumbnailUrl: null,
+                durationSeconds: null,
+              },
+            ],
+            failures: {},
+            truncated: [],
+            connectedSites: ["youtube", "twitter"],
+          };
         case "search_content":
           return [];
         case "fetch_metadata": {

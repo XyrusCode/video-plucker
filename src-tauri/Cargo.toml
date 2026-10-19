@@ -1,6 +1,6 @@
 [package]
 name = "video-plucker"
-version = "4.11.0"
+version = "4.12.0"
 description = "Video Plucker — download videos from YouTube, X, TikTok, and streaming sites"
 authors = ["Prince Shammah"]
 edition = "2021"
@@ -38,5 +38,7 @@ scraper = "0.20"
 aes = "0.8"
 ctr = "0.9"
 sha2 = "0.10"
+# YouTube's SAPISIDHASH is a SHA-1 digest.
+sha1 = "0.10"
 base64 = "0.22"
 url = "2"

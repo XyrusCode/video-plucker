@@ -145,6 +145,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | 1.1.0     | 4.3.0   | `yt-plucker://analyze?...` / `yt-plucker://pluck?...` |
 | 1.2.5     | 4.4.0   | Same protocol; cookies.txt export feeds the desktop Cookie Manager |
 | 1.2.5     | 4.5.1   | Same protocol; failure UX overhaul (Queue-for-later, issue reporting, self-healing yt-dlp) |
+| 1.2.5     | 4.12.0  | Same protocol; the desktop adds a Saved tab, a batch link field and a retry |
 
 ## Key Files
 
@@ -159,4 +160,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.13.1 (ChromeCookieUnlock plugin actually loaded; x.com cookie alias)*
+*Last updated: v4.12.0 (Saved tab, batch link field, retry; the protocol is unchanged)*
