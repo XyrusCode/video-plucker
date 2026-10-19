@@ -207,6 +207,24 @@ test("the Windows window controls call the frameless verbs", async ({ page }) =>
   expect(log).toContain("window.hide");
 });
 
+test("the Windows title bar is a Tauri drag region, and only there", async ({ page }) => {
+  // Tauri reads data-tauri-drag-region; app-region is an Electron property and does nothing here.
+  await expect(page.locator(".titlebar")).toHaveAttribute("data-tauri-drag-region", "");
+  await expect(page.locator("body")).toHaveAttribute("data-chrome", "windows");
+});
+
+test("the row menu survives a re-render of the action cell", async ({ page }) => {
+  // The hidden control buttons live outside the cell that renderRowActions clears;
+  // a menu item must still reach them after the row has been re-rendered.
+  const row = page.locator("#plucks tr.row").first();
+  await row.locator(".row-action").first().click();
+  await expect(page.locator(".overflow-menu")).toHaveCount(0);
+  await row.locator('button[aria-label^="More actions"]').click();
+  await expect(page.locator(".overflow-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".overflow-menu")).toHaveCount(0);
+});
+
 test("a job row does not overflow its table", async ({ page }) => {
   const overflow = await page.evaluate(() => {
     const table = document.getElementById("downloads-table");
@@ -263,7 +281,7 @@ test("a restored queue item downloads into the current folder, not an empty one"
   await expect(page.locator("#dump-status")).toContainText("1 setting");
 
   await page.locator("#nav-queue").click();
-  await page.locator(".row-action").first().click();
+  await page.locator("#queue-list .row-action").first().click();
 
   const started = await page.evaluate(() => {
     const call = window.__invokeLog.find((c) => c.cmd === "start_pluck");

@@ -357,7 +357,7 @@ async function renderCookies() {
     status.className = "cookie-status";
     status.textContent = "Saved";
     const clear = document.createElement("button");
-    clear.className = "ghost ghost-danger";
+    clear.className = "quiet danger";
     clear.textContent = "Clear";
     clear.addEventListener("click", async () => {
       setCookieError("");
@@ -678,10 +678,13 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   // Hidden control elements. The event handlers below attach to these
   // exactly as they did when they were visible buttons, so the download
   // lifecycle is untouched; the overflow menu drives them.
+  const controlsEl = document.createElement("span");
+  controlsEl.hidden = true;
+  card.appendChild(controlsEl);
   const makeHiddenButton = (cls) => {
     const b = document.createElement("button");
     b.className = `job-control ${cls} hidden`;
-    actionsEl.appendChild(b);
+    controlsEl.appendChild(b);
     return b;
   };
   job.cancelBtn = makeHiddenButton("job-cancel");
@@ -758,6 +761,8 @@ function renderRowActions(job) {
   job.actionsEl.innerHTML = "";
 
   const primary = primaryActionFor(job);
+  if (primary) job.card.dataset.needsAction = "";
+  else delete job.card.dataset.needsAction;
   if (primary) {
     const b = document.createElement("button");
     b.className = "row-action";
@@ -1121,8 +1126,8 @@ async function restoreInterruptedPlucks() {
       job.rawErrors = (rec.rawErrors || "").split("\n").filter(Boolean);
       job.failureKind = rec.failureKind || null;
       job.friendlyError = rec.friendly || null;
-      job.statusEl.textContent = "Failed";
-      job.statusEl.classList.add("fail");
+      job.statusTextEl.textContent = "Failed";
+      job.statusEl.className = "cell-status fail";
       showFailMessage(job, job.friendlyError || "Download failed.");
       job.queueBtn.classList.remove("hidden");
       job.reportBtn.classList.remove("hidden");
@@ -1130,10 +1135,12 @@ async function restoreInterruptedPlucks() {
     } else {
       job.resumeBtn.classList.remove("hidden");
       job.dismissBtn.classList.remove("hidden");
-      job.statusEl.textContent = "Interrupted — resume to continue";
-      job.statusEl.classList.add("cancelled");
+      job.statusTextEl.textContent = "Interrupted, resume to continue";
+      job.statusEl.className = "cell-status paused";
     }
+    renderRowActions(job);
   }
+  updateStatusBar();
 }
 
 function setOverall(job, itemFraction) {
@@ -1167,6 +1174,7 @@ function finishJob(job, { ok, cancelled, error }) {
     // and "Park for later" replaces retry as the primary action.
     if (error) appendError(job, error);
     job.statusTextEl.textContent = "Failed";
+    job.statusTextEl.title = job.friendlyError || "";
     job.statusEl.className = "cell-status fail";
     showFailMessage(job, job.friendlyError || "Download failed.");
     if (job.lastFile) job.openBtn.classList.remove("hidden");
@@ -2013,7 +2021,7 @@ function showUpdateBanner(version, body) {
     <span>Video Plucker <strong>v${version}</strong> is available.</span>
     <div class="update-actions">
       <button id="update-install-btn" class="primary">Download &amp; Install</button>
-      <button id="update-dismiss-btn" class="ghost">Dismiss</button>
+      <button id="update-dismiss-btn" class="quiet">Dismiss</button>
     </div>
   `;
   document.body.appendChild(banner);
@@ -2192,6 +2200,9 @@ function applyChrome() {
   const windows = /Windows/i.test(navigator.userAgent);
   document.body.dataset.chrome = windows ? "windows" : "native";
   windowControls.hidden = !windows;
+  for (const el of [document.querySelector(".titlebar"), document.querySelector(".titlebar-brand")]) {
+    el.toggleAttribute("data-tauri-drag-region", windows);
+  }
   return windows;
 }
 

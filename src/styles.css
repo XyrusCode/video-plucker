@@ -119,11 +119,18 @@ body {
   user-select: none;
 }
 
-/* The drag region is Windows-only. On macOS and Linux the window keeps
-   its native decorations, so the bar must never swallow a click that
-   belongs to the OS. The buttons are only in the DOM on Windows. */
-body[data-chrome="windows"] .titlebar {
-  app-region: drag;
+/* On macOS and Linux the window keeps its native title bar, so this one
+   is removed rather than drawn twice. On Windows, main.js sets Tauri's
+   data-tauri-drag-region attribute on the bar and the brand. */
+body[data-chrome="native"] {
+  grid-template-rows: 1fr var(--h-statusbar);
+  grid-template-areas:
+    "rail main"
+    "status status";
+}
+
+body[data-chrome="native"] .titlebar {
+  display: none;
 }
 
 .titlebar-brand {
@@ -1146,6 +1153,12 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* Only meaningful in parallel mode; main.js toggles .enabled. */
+#concurrent-downloads-row:not(.enabled) {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .setting-block {
