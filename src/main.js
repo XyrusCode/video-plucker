@@ -10,6 +10,9 @@ const playlistToggle = document.getElementById("playlist-toggle");
 const playlistCheck = document.getElementById("playlist-check");
 const analyzeBtn = document.getElementById("analyze-btn");
 const analyzeError = document.getElementById("analyze-error");
+const duplicateBanner = document.getElementById("duplicate-banner");
+const duplicateText = document.getElementById("duplicate-text");
+const duplicateForce = document.getElementById("duplicate-force");
 const metaCard = document.getElementById("meta-card");
 const metaThumb = document.getElementById("meta-thumb");
 const metaTitle = document.getElementById("meta-title");
@@ -331,7 +334,7 @@ async function importDump() {
 
     const from = result.appVersion ? ` (from ${result.appVersion})` : "";
     setDumpStatus(
-      `Restored ${result.prefsKeys} setting(s), ${result.cookieFiles} cookie set(s) and ${result.queueItems} queued item(s)${from}. Restart to pick up the settings change.`,
+      `Restored ${result.prefsKeys} setting(s), ${result.cookieFiles} cookie set(s), ${result.queueItems} queued item(s) and ${result.ledgerEntries} download record(s)${from}. Restart to pick up the settings change.`,
     );
   } catch (err) {
     setDumpStatus(`Import failed: ${err}`);
@@ -514,6 +517,7 @@ async function analyze() {
  */
 async function analyzeOne(url) {
   hideBatch();
+  hideDuplicate();
   currentMeta = null;
   updateInputMode();
   const clean = cleanPlatformUrl(url);
@@ -524,7 +528,9 @@ async function analyzeOne(url) {
       playlistMode: playlistMode(),
       cookiesFromBrowser: cookiesFromBrowser(),
     });
+    currentMeta.duplicate = currentMeta.id ? await findDuplicate(currentMeta.id) : null;
     renderMeta(currentMeta);
+    renderDuplicate(currentMeta.duplicate);
     pluckBtn.disabled = false;
   } catch (err) {
     metaCard.classList.add("hidden");
@@ -540,6 +546,7 @@ async function analyzeOne(url) {
  * it, so editing the field afterwards does not change what a tile plucks.
  */
 async function analyzeMany(urls) {
+  hideDuplicate();
   currentMeta = null;
   metaCard.classList.add("hidden");
   updateInputMode();
@@ -1377,10 +1384,74 @@ async function startPluck(url, meta) {
 
 pluckBtn.addEventListener("click", async () => {
   if (!currentMeta) return;
+  if (currentMeta.duplicate) {
+    // Auto-skip: nothing is queued. Download anyway is the way past the warning.
+    analyzeError.textContent = "Skipped: already downloaded. Use Download anyway to fetch it again.";
+    analyzeError.classList.remove("hidden");
+    return;
+  }
   await startPluck(cleanPlatformUrl(urlInput.value.trim()), currentMeta);
   // The link is in the queue now, so the field is empty again.
   clearInput();
 });
+
+duplicateForce.addEventListener("click", async () => {
+  if (!currentMeta) return;
+  hideDuplicate();
+  await startPluck(cleanPlatformUrl(urlInput.value.trim()), currentMeta);
+  clearInput();
+});
+
+/**
+ * The ledger and the destination folder are checked for this video's id. A failed lookup
+ * is treated as "not a duplicate": a broken check must never block a download.
+ */
+async function findDuplicate(id) {
+  try {
+    return await invoke("find_duplicate", { id, destDir });
+  } catch {
+    return null;
+  }
+}
+
+function renderDuplicate(match) {
+  duplicateBanner.classList.toggle("hidden", !match);
+  if (match) duplicateText.textContent = `Already downloaded: ${match.title}`;
+}
+
+function hideDuplicate() {
+  duplicateBanner.classList.add("hidden");
+}
+
+// Same rules as DuplicateGuard.kt and ledger.rs: the id is the last [id] token before the extension.
+const ID_TOKEN = /\[([^[\]]+)\]\.[A-Za-z0-9]+$/;
+
+function idFromFileName(name) {
+  const m = ID_TOKEN.exec(name);
+  return m ? m[1] : null;
+}
+
+function titleFromFileName(name) {
+  const stem = name.replace(/\.[A-Za-z0-9]+$/, "");
+  return stem.replace(/\s*\[[^[\]]+\]$/, "").trim() || name;
+}
+
+/** Records a finished download. The size is 0: the frontend has no file-system access to read it. */
+function recordLedger(job) {
+  const fileName = job.lastFile.split(/[\\/]/).pop();
+  const id = idFromFileName(fileName);
+  if (!id) return;
+  invoke("ledger_record", {
+    entry: {
+      id,
+      title: titleFromFileName(fileName),
+      fileName,
+      sizeBytes: 0,
+      platform: platformForReport(job.params.url),
+      downloadedAt: Date.now(),
+    },
+  }).catch(() => {});
+}
 
 // Re-create cards for plucks that were still active when the app last closed.
 async function restoreInterruptedPlucks() {
@@ -1471,6 +1542,7 @@ function finishJob(job, { ok, cancelled, error }) {
     job.statusTextEl.textContent = "Completed";
     job.statusEl.className = "cell-status ok";
     if (job.lastFile) job.openBtn.classList.remove("hidden");
+    if (job.lastFile) recordLedger(job);
     removeRecord(job.id);
   } else if (cancelled) {
     job.statusTextEl.textContent = "Cancelled";

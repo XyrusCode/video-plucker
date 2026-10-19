@@ -4,7 +4,7 @@
 //! Schema (identical to `SettingsDump.kt` on Android):
 //! ```json
 //! {
-//!   "dumpVersion": 1,
+//!   "dumpVersion": 3,
 //!   "appVersion": "4.8.0",
 //!   "exportedAt": 1792341101993,
 //!   "prefs": { "auto_update": true, ... },
@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tauri::AppHandle;
 
-pub const DUMP_VERSION: u32 = 1;
+use crate::ledger::{self, LedgerEntry};
+
+pub const DUMP_VERSION: u32 = 3;
 
 /// Pref keys the desktop app owns and can therefore round-trip.
 ///
@@ -72,6 +74,8 @@ pub struct DumpCounts {
     /// Parked items left out because they are streaming-site picks, not URLs.
     #[serde(rename = "skippedQueueItems")]
     pub skipped_queue_items: usize,
+    #[serde(rename = "ledgerEntries")]
+    pub ledger_entries: usize,
     #[serde(rename = "appVersion")]
     pub app_version: String,
 }
@@ -84,10 +88,13 @@ struct Dump {
     app_version: String,
     #[serde(rename = "exportedAt")]
     exported_at: i64,
+    #[serde(rename = "sourcePlatform")]
+    source_platform: &'static str,
     prefs: Map<String, Value>,
     #[serde(rename = "cookieFiles")]
     cookie_files: BTreeMap<String, String>,
     queue: Vec<QueueItem>,
+    ledger: Vec<LedgerEntry>,
 }
 
 #[derive(Serialize)]
@@ -158,6 +165,7 @@ pub fn build_dump(
     settings: &Map<String, Value>,
     cookies_dir: &Path,
     parked: &[(String, Value)],
+    ledger: &[LedgerEntry],
 ) -> (String, DumpCounts) {
     let mut prefs = Map::new();
     for (dump_key, store_key) in EXPORTED_PREFS {
@@ -219,15 +227,18 @@ pub fn build_dump(
         cookie_files: cookie_files.len(),
         queue_items: queue.len(),
         skipped_queue_items: skipped,
+        ledger_entries: ledger.len(),
         app_version: app_version.to_string(),
     };
     let dump = Dump {
         dump_version: DUMP_VERSION,
         app_version: app_version.to_string(),
         exported_at: now_millis(),
+        source_platform: "desktop",
         prefs,
         cookie_files,
         queue,
+        ledger: ledger.to_vec(),
     };
     // Serialising this shape cannot fail, and a silent fallback would write an empty file
     // while the caller reports a successful export of everything it counted.
@@ -341,6 +352,7 @@ pub fn export_dump(
         &settings_map,
         &crate::pluck::app_cookies_dir(&app),
         &parked,
+        &ledger::load(&app),
     );
     std::fs::write(&path, json).map_err(|e| format!("Could not write {path}: {e}"))?;
     Ok(counts)
@@ -375,11 +387,16 @@ pub fn import_dump(app: AppHandle, path: String) -> Result<ImportResult, String>
 
     let prefs = restored_prefs(&dump);
     let queue = restored_queue_items(&dump);
+    // Absent ledger = nothing to add; the local ledger is never cleared by an import.
+    let incoming = ledger::from_json(&dump["ledger"]);
+    let merged = ledger::merge(&ledger::load(&app), &incoming);
+    ledger::save(&app, &merged)?;
     let counts = DumpCounts {
         prefs_keys: prefs.len(),
         cookie_files: cookie_files.len(),
         queue_items: queue.len(),
         skipped_queue_items: 0,
+        ledger_entries: incoming.len(),
         app_version: dump
             .get("appVersion")
             .and_then(|v| v.as_str())
@@ -417,10 +434,10 @@ mod tests {
         let dir = temp_dir("schema");
         write_cookie(&dir, "x.txt", "# Netscape HTTP Cookie File\n.x.com\tTRUE\t/\tTRUE\t0\tk\tv\n");
         let settings = json!({ "autoUpdate": true, "termsAccepted": true, "destDir": "C:/vids" });
-        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[]);
+        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[], &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
-        assert_eq!(dump["dumpVersion"], 1);
+        assert_eq!(dump["dumpVersion"], 3);
         assert_eq!(dump["appVersion"], "4.8.0");
         assert!(dump["exportedAt"].as_i64().unwrap() > 0);
         assert!(dump["prefs"].is_object());
@@ -432,7 +449,7 @@ mod tests {
     fn maps_prefs_to_the_keys_android_reads() {
         let dir = temp_dir("prefs");
         let settings = json!({ "autoUpdate": false });
-        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[]);
+        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[], &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(dump["prefs"]["auto_update"], false);
@@ -447,7 +464,7 @@ mod tests {
         // export. Carrying it would mean writing a key on import that nothing reads.
         let dir = temp_dir("terms");
         let settings = json!({ "autoUpdate": true, "termsAccepted": true });
-        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[]);
+        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &[], &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
         assert!(dump["prefs"].get("terms_accepted").is_none());
     }
@@ -466,7 +483,7 @@ mod tests {
         // machine. A stale path reads as "configured" and then fails at download time.
         let dir = temp_dir("stale-path");
         write_cookie(&dir, "x.txt", "body");
-        let (text, _) = build_dump("4.8.0", &Map::new(), &dir, &[]);
+        let (text, _) = build_dump("4.8.0", &Map::new(), &dir, &[], &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
         let prefs = dump["prefs"].as_object().unwrap();
@@ -480,7 +497,7 @@ mod tests {
         write_cookie(&dir, "x.txt", "x body");
         write_cookie(&dir, "vk_video.txt", "vk body");
         write_cookie(&dir, "notes.md", "ignored");
-        let (text, counts) = build_dump("4.8.0", &Map::new(), &dir, &[]);
+        let (text, counts) = build_dump("4.8.0", &Map::new(), &dir, &[], &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(counts.cookie_files, 2);
@@ -502,7 +519,7 @@ mod tests {
                 json!({ "jobId": 2, "parkedAt": 6, "params": { "kind": "stream", "title": "A Show", "episodes": [1, 2] } }),
             ),
         ];
-        let (_, counts) = build_dump("4.8.0", &Map::new(), &dir, &parked);
+        let (_, counts) = build_dump("4.8.0", &Map::new(), &dir, &parked, &[]);
 
         assert_eq!(counts.queue_items, 1);
         assert_eq!(counts.skipped_queue_items, 1);
@@ -515,7 +532,7 @@ mod tests {
             "job-42".to_string(),
             json!({ "jobId": 42, "parkedAt": 1700000000, "params": { "url": "https://youtu.be/x", "quality": "1080", "title": "Clip" } }),
         )];
-        let (text, _) = build_dump("4.8.0", &Map::new(), &dir, &parked);
+        let (text, _) = build_dump("4.8.0", &Map::new(), &dir, &parked, &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
         let item = &dump["queue"][0];
 
@@ -663,7 +680,7 @@ mod tests {
             "7".to_string(),
             json!({ "jobId": 7, "parkedAt": 99, "params": { "url": "https://vimeo.com/1", "quality": "720", "title": "V" } }),
         )];
-        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &parked);
+        let (text, _) = build_dump("4.8.0", settings.as_object().unwrap(), &dir, &parked, &[]);
         let dump: Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(restored_cookie_files(&dump).len(), 1);
