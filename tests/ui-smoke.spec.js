@@ -152,7 +152,7 @@ test("status bar shows engine state and the running version", async ({ page }) =
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.12.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.14.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {

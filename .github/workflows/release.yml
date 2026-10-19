@@ -34,6 +34,15 @@ jobs:
         run: |
           version=$(jq -r '.version' src-tauri/tauri.conf.json)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A version number is used once, ever. The app was renumbered in
+          # September, so 4.10.0, 4.12.0 and 4.13.0 are already taken by older
+          # releases. Publishing under one of those numbers does not replace
+          # that release, it is skipped, and the change ships with no download.
+          highest=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -1)
+          if [ -n "$highest" ] && [ "$version" != "$highest" ] && [ "$(printf '%s\n%s\n' "$version" "$highest" | sort -V | tail -1)" = "$highest" ]; then
+            echo "::error::Version $version is not above the latest release ($highest). A version number is used once: pick a higher one."
+            exit 1
+          fi
           if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release=false" >> "$GITHUB_OUTPUT"
             echo "Release v$version already exists — nothing to do."
