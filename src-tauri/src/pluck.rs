@@ -303,21 +303,35 @@ fn index(s: &str) -> Option<u64> {
     num(s).map(|f| f as u64)
 }
 
-/// Parse one yt-dlp output line for a normal pluck. Returns the classified
-/// failure when the line was an ERROR line, so the caller can accumulate a
-/// job-level verdict.
+/// What one yt-dlp output line meant.
+pub enum LineOutcome {
+    /// Nothing the app tracks.
+    Nothing,
+    /// A progress tick. The item is the playlist item index, absent for a
+    /// single video; the fraction is how far along that item is.
+    Progress {
+        item: Option<u64>,
+        fraction: Option<f64>,
+    },
+    /// An error line, with the classified verdict.
+    Failure(FailureKind, String),
+}
+
+/// Parse one yt-dlp output line for a normal pluck. Returns what the line
+/// meant, so the caller can accumulate a job-level verdict and see whether
+/// the download is still making progress.
 pub fn handle_line(
     app: &AppHandle,
     job_id: u64,
     raw: &str,
     throttle: &mut Throttle,
-) -> Option<(FailureKind, String)> {
+) -> LineOutcome {
     let line = raw.trim_end_matches(['\r', '\n']).trim();
 
     if let Some(rest) = line.strip_prefix("PROG|") {
         let p: Vec<&str> = rest.split('|').collect();
         if p.len() < 6 {
-            return None;
+            return LineOutcome::Nothing;
         }
         let downloaded = num(p[1]);
         // total_bytes is often NA; fall back to the estimate
@@ -328,7 +342,7 @@ pub fn handle_line(
         };
         let finished = percent.map(|pc| pc >= 100.0).unwrap_or(false);
         if !finished && !throttle.ready() {
-            return None;
+            return LineOutcome::Nothing;
         }
         let _ = app.emit(
             "pluck://progress",
@@ -342,10 +356,14 @@ pub fn handle_line(
                 eta: num(p[5]),
             },
         );
+        LineOutcome::Progress {
+            item: index(p[0]),
+            fraction: percent.map(|pc| pc / 100.0),
+        }
     } else if let Some(rest) = line.strip_prefix("ITEM|") {
         let p: Vec<&str> = rest.splitn(3, '|').collect();
         if p.len() < 3 {
-            return None;
+            return LineOutcome::Nothing;
         }
         let _ = app.emit(
             "pluck://item-start",
@@ -357,10 +375,11 @@ pub fn handle_line(
                 title: p[2].to_string(),
             },
         );
+        LineOutcome::Nothing
     } else if let Some(rest) = line.strip_prefix("DONE|") {
         let p: Vec<&str> = rest.splitn(2, '|').collect();
         if p.len() < 2 {
-            return None;
+            return LineOutcome::Nothing;
         }
         let _ = app.emit(
             "pluck://item-done",
@@ -370,6 +389,7 @@ pub fn handle_line(
                 filepath: p[1].to_string(),
             },
         );
+        LineOutcome::Nothing
     } else if line.starts_with("ERROR") {
         let failure = errors::classified(line, None);
         let _ = app.emit(
@@ -381,9 +401,12 @@ pub fn handle_line(
                 kind: failure.kind.to_string(),
             },
         );
-        return Some((errors::kind_of(failure.kind), failure.friendly));
+        return LineOutcome::Failure(
+            errors::kind_of(failure.kind),
+            failure.friendly,
+        );
     }
-    None
+    LineOutcome::Nothing
 }
 
 /// Line handler for resolved-stream plucks. Unlike [`handle_line`], the item

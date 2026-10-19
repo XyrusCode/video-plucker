@@ -16,6 +16,9 @@ pub enum FailureKind {
     UnsupportedContent,
     /// The signature matches a known stale-engine breakage.
     StaleEngine,
+    /// The transport failed: the network went away mid-download. Another
+    /// attempt can work, so this is the one kind that is retried.
+    Network,
     /// Anything else.
     Other,
 }
@@ -26,15 +29,17 @@ impl FailureKind {
             FailureKind::LoginRequired => "login_required",
             FailureKind::UnsupportedContent => "unsupported_content",
             FailureKind::StaleEngine => "stale_engine",
+            FailureKind::Network => "network",
             FailureKind::Other => "other",
         }
     }
 
     fn rank(self) -> u8 {
         match self {
-            FailureKind::LoginRequired => 3,
-            FailureKind::UnsupportedContent => 2,
-            FailureKind::StaleEngine => 1,
+            FailureKind::LoginRequired => 4,
+            FailureKind::UnsupportedContent => 3,
+            FailureKind::StaleEngine => 2,
+            FailureKind::Network => 1,
             FailureKind::Other => 0,
         }
     }
@@ -44,6 +49,7 @@ impl FailureKind {
             "login_required" => FailureKind::LoginRequired,
             "unsupported_content" => FailureKind::UnsupportedContent,
             "stale_engine" => FailureKind::StaleEngine,
+            "network" => FailureKind::Network,
             _ => FailureKind::Other,
         }
     }
@@ -83,6 +89,8 @@ const STALE_ENGINE_MSG: &str =
 
 const GENERIC_MSG: &str = "Download failed.";
 
+const NETWORK_MSG: &str = "The network dropped while this was downloading.";
+
 /// Signatures that mean "this needs cookies / a logged-in browser session".
 const LOGIN_SIGNATURES: &[&str] = &[
     "sign in to confirm",
@@ -121,6 +129,75 @@ const STALE_SIGNATURES: &[&str] = &[
     "impersonat", // impersonate / impersonator
     "update yt-dlp",
 ];
+
+/// Transport-level failures, ported from the mobile app's FailureClassifier.
+///
+/// yt-dlp's own retry budget does not cover a network *interface* going away:
+/// the socket fails immediately with a hard error rather than a retryable
+/// HTTP status, so `--retries` burns through in seconds and the job dies.
+///
+/// The list must not overlap [`STALE_SIGNATURES`]. A misclassified network
+/// error costs a pointless engine update, and a misclassified engine error
+/// costs one extra retry.
+const NETWORK_SIGNATURES: &[&str] = &[
+    // Transport-level errno values as Python's socket/urllib surface them.
+    "errno 101", // ENETUNREACH
+    "errno 104", // ECONNRESET
+    "errno 105", // ENETDOWN
+    "errno 110", // ETIMEDOUT
+    "errno 111", // ECONNREFUSED
+    "errno 113", // EHOSTUNREACH
+    "errno 32",  // EPIPE
+    "errno -2",  // gaierror: name or service not known
+    "errno -3",  // gaierror: temporary failure in name resolution
+    "errno -4",  // gaierror: unknown error
+    "errno -5",  // gaierror: no address associated with hostname
+    "network is unreachable",
+    "network is down",
+    "no route to host",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "no address associated with hostname",
+    "getaddrinfo",
+    "connection timed out",
+    "connection reset by peer",
+    "connection refused",
+    "connection aborted",
+    "broken pipe",
+    "timed out",
+    // yt-dlp's own wrappers around a failed fetch. "unable to download" covers
+    // the webpage, the video data and the extractor api page.
+    "unable to download",
+    "incomplete data received",
+    "incompleteread",
+    "unexpected eof",
+];
+
+/// True when the message carries an HTTP status of the given class:
+/// "http error 404" is a 4xx, "http error 503" a 5xx.
+fn has_http_status(lower: &str, class: char) -> bool {
+    const NEEDLE: &str = "http error ";
+    lower.match_indices(NEEDLE).any(|(i, _)| {
+        let rest = lower[i + NEEDLE.len()..].as_bytes();
+        rest.first() == Some(&(class as u8)) && rest.get(1).is_some_and(|b| b.is_ascii_digit())
+    })
+}
+
+/// True when this yt-dlp failure means "the network went away", as opposed
+/// to "the content is unreachable" or "the engine is out of date".
+///
+/// A 4xx is never a transport failure: the site answered, and the answer was
+/// that the content is not there. A 5xx is: the origin is down or overloaded,
+/// so holding and trying again is the right move.
+fn is_network(lower: &str) -> bool {
+    if has_http_status(lower, '4') {
+        return false;
+    }
+    if has_http_status(lower, '5') {
+        return true;
+    }
+    NETWORK_SIGNATURES.iter().any(|s| lower.contains(s))
+}
 
 /// Pretty platform name for a URL, used in login-required guidance.
 fn platform_name(url: &str) -> Option<&'static str> {
@@ -174,8 +251,15 @@ pub fn classify(raw: &str, url: Option<&str>) -> (FailureKind, String) {
         return (FailureKind::LoginRequired, login_friendly(url));
     }
 
+    // A stale extractor is a more specific cause than a transport failure, and
+    // refreshing the engine is the cheaper fix, so it wins when a line
+    // matches both. The engine self-heal is handled by the caller.
     if STALE_SIGNATURES.iter().any(|s| lower.contains(s)) {
         return (FailureKind::StaleEngine, STALE_ENGINE_MSG.into());
+    }
+
+    if is_network(&lower) {
+        return (FailureKind::Network, NETWORK_MSG.into());
     }
 
     (FailureKind::Other, GENERIC_MSG.into())
@@ -245,6 +329,71 @@ mod tests {
         let (kind, friendly) = classify("ERROR: something exploded", None);
         assert_eq!(kind, FailureKind::Other);
         assert_eq!(friendly, GENERIC_MSG);
+    }
+
+    #[test]
+    fn a_dropped_connection_is_a_network_failure() {
+        let (kind, friendly) = classify(
+            "ERROR: unable to download video data: <urlopen error [Errno 101] Network is unreachable>",
+            None,
+        );
+        assert_eq!(kind, FailureKind::Network);
+        assert_eq!(friendly, NETWORK_MSG);
+    }
+
+    #[test]
+    fn a_timeout_is_a_network_failure() {
+        let (kind, _) = classify(
+            "ERROR: unable to download video data: <urlopen error [Errno 110] Connection timed out>",
+            None,
+        );
+        assert_eq!(kind, FailureKind::Network);
+    }
+
+    #[test]
+    fn a_server_error_is_a_network_failure() {
+        let (kind, _) = classify(
+            "ERROR: unable to download webpage: HTTP Error 503: Service Unavailable",
+            None,
+        );
+        assert_eq!(kind, FailureKind::Network);
+    }
+
+    #[test]
+    fn a_missing_page_is_not_a_network_failure() {
+        // The site answered. Running it again gets the same answer.
+        let (kind, _) = classify(
+            "ERROR: unable to download webpage: HTTP Error 404: Not Found",
+            None,
+        );
+        assert_eq!(kind, FailureKind::Other);
+    }
+
+    #[test]
+    fn a_401_is_still_login_required() {
+        let (kind, _) = classify(
+            "ERROR: unable to download webpage: HTTP Error 401: Unauthorized",
+            Some("https://www.youtube.com/watch?v=abc"),
+        );
+        assert_eq!(kind, FailureKind::LoginRequired);
+    }
+
+    #[test]
+    fn the_network_list_does_not_overlap_the_stale_list() {
+        // A misclassified network error costs a pointless engine update, and a
+        // misclassified engine error costs one extra retry.
+        for network in NETWORK_SIGNATURES {
+            for stale in STALE_SIGNATURES {
+                assert!(
+                    !stale.contains(network),
+                    "{network:?} and {stale:?} overlap"
+                );
+                assert!(
+                    !network.contains(stale),
+                    "{network:?} and {stale:?} overlap"
+                );
+            }
+        }
     }
 
     #[test]

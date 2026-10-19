@@ -4,12 +4,14 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
+use tauri::async_runtime::Receiver;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
 use crate::engine;
 use crate::errors::{self, FailureKind};
 use crate::pluck::{self, DonePayload, Throttle};
+use crate::retry;
 use crate::{PluckJob, PluckState};
 
 #[derive(Serialize)]
@@ -499,6 +501,33 @@ pub async fn start_pluck(
         // One engine self-heal per job: on a stale-engine failure, download
         // the current yt-dlp and rerun once. Pause/cancel never self-heal.
         let mut healed = false;
+        // A transport failure is worth another run: the network dropped, the
+        // download did not fail on its own terms. The budget is spent on
+        // consecutive failures only, so a long download over a flapping
+        // connection never gives up.
+        let mut attempts_used: u32 = 0;
+        let mut progress = retry::Progress::default();
+
+        // Every run starts yt-dlp the same way, so it is one closure.
+        let start_ytdlp = || -> Result<(Receiver<CommandEvent>, CommandChild), String> {
+            engine::ytdlp_command(&app_handle)?
+                .env("PYTHONIOENCODING", "utf-8")
+                .args(args.clone())
+                .spawn()
+                .map_err(|e| e.to_string())
+        };
+        let set_pid = |pid: u32| {
+            if let Some(j) = app_handle
+                .state::<PluckState>()
+                .0
+                .lock()
+                .unwrap()
+                .get_mut(&job_id)
+            {
+                j.pid = pid;
+            }
+        };
+
         'attempts: loop {
             let mut worst: Option<(FailureKind, String)> = None;
             while let Some(event) = rx.recv().await {
@@ -508,10 +537,20 @@ pub async fn start_pluck(
                     CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
                         for line in text.lines() {
-                            if let Some(failure) =
-                                pluck::handle_line(&app_handle, job_id, line, &mut throttle)
-                            {
-                                worst = errors::worse(worst, Some(failure));
+                            match pluck::handle_line(&app_handle, job_id, line, &mut throttle) {
+                                pluck::LineOutcome::Failure(kind, friendly) => {
+                                    worst = errors::worse(worst, Some((kind, friendly)));
+                                }
+                                pluck::LineOutcome::Progress { item, fraction } => {
+                                    // Forward progress means the transfer is
+                                    // working, so the failures before it no
+                                    // longer describe the job and the budget
+                                    // goes back to full.
+                                    if progress.advanced(item, fraction) {
+                                        attempts_used = 0;
+                                    }
+                                }
+                                pluck::LineOutcome::Nothing => {}
                             }
                         }
                     }
@@ -526,13 +565,15 @@ pub async fn start_pluck(
                             );
                         } else {
                             let ok = payload.code == Some(0) && !was_cancelled;
+                            let kind = worst.as_ref().map(|(k, _)| *k);
+
+                            // A stale extractor is fixed by refreshing yt-dlp.
+                            // That is not a retry: it costs the user nothing
+                            // and it does not spend the network budget.
                             if !ok
                                 && !was_cancelled
                                 && !healed
-                                && matches!(
-                                    worst.as_ref().map(|(k, _)| *k),
-                                    Some(FailureKind::StaleEngine)
-                                )
+                                && kind == Some(FailureKind::StaleEngine)
                             {
                                 healed = true;
                                 let _ = app_handle.emit(
@@ -542,33 +583,43 @@ pub async fn start_pluck(
                                         message: "Updating downloader…".into(),
                                     },
                                 );
-                                match engine::update_engine(&app_handle).await {
-                                    Ok(_) => {
-                                        if let Ok((next_rx, next_child)) =
-                                            engine::ytdlp_command(&app_handle)
-                                                .and_then(|c| {
-                                                    c.env("PYTHONIOENCODING", "utf-8")
-                                                        .args(args.clone())
-                                                        .spawn()
-                                                        .map_err(|e| e.to_string())
-                                                })
-                                        {
-                                            if let Some(j) = app_handle
-                                                .state::<PluckState>()
-                                                .0
-                                                .lock()
-                                                .unwrap()
-                                                .get_mut(&job_id)
-                                            {
-                                                j.pid = next_child.pid();
-                                            }
-                                            rx = next_rx;
-                                            continue 'attempts;
-                                        }
+                                if engine::update_engine(&app_handle).await.is_ok() {
+                                    if let Ok((next_rx, next_child)) = start_ytdlp() {
+                                        set_pid(next_child.pid());
+                                        rx = next_rx;
+                                        continue 'attempts;
                                     }
-                                    Err(_) => {}
                                 }
                             }
+
+                            // A transport failure is worth another run. A login
+                            // gate, a photo post and a missing page are not:
+                            // running them again gets the same answer.
+                            if !ok && !was_cancelled {
+                                if let Some(wait) = retry::retry_after(
+                                    kind.unwrap_or(FailureKind::Other),
+                                    attempts_used,
+                                ) {
+                                    attempts_used += 1;
+                                    let _ = app_handle.emit(
+                                        "pluck://status",
+                                        pluck::StatusPayload {
+                                            job_id,
+                                            message: format!(
+                                                "Network lost, retrying in {}s…",
+                                                wait.as_secs()
+                                            ),
+                                        },
+                                    );
+                                    tokio::time::sleep(wait).await;
+                                    if let Ok((next_rx, next_child)) = start_ytdlp() {
+                                        set_pid(next_child.pid());
+                                        rx = next_rx;
+                                        continue 'attempts;
+                                    }
+                                }
+                            }
+
                             // a fully-finished pluck no longer needs its resume archive
                             if ok {
                                 let _ = std::fs::remove_file(&archive_task);

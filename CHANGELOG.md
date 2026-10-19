@@ -4,6 +4,22 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.10.0] - 2026-10-19
+
+### Added
+- **A failed download can be retried.** The row's primary action is now Retry. It runs the same
+  download again, keeping the yt-dlp archive, so items that already finished are not downloaded a
+  second time, and picking up a cookies.txt imported since the failure.
+- **A dropped connection is retried by itself.** A transport failure (the network went away, the
+  socket timed out, the origin answered 5xx) is run again up to three times, 2s then 5s then 12s
+  apart, and the row says so while it waits. Forward progress puts the budget back, so a long
+  download over a flapping connection never gives up. A login gate, a photo post and a missing
+  page are not retried: running them again gets the same answer.
+
+### Changed
+- Failure text is now plain about which kind of failure it was. A transport failure says the
+  network dropped instead of "Download failed."
+
 ## [4.9.1] - 2026-10-19
 
 ### Fixed
