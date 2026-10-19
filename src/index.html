@@ -80,13 +80,14 @@
 
         <div class="view-body">
           <div class="controls-row">
-            <input
+            <textarea
               id="url-input"
-              class="grow"
-              type="text"
-              placeholder="Paste a YouTube or X (Twitter) video or playlist URL"
+              class="grow url-input"
+              rows="3"
+              placeholder="Paste a YouTube or X (Twitter) video or playlist URL. One URL per line: several links are analysed together."
               spellcheck="false"
-            />
+            ></textarea>
+            <span class="field-hint url-hint">One URL per line. Several links are analysed together.</span>
             <label id="playlist-toggle" class="playlist-toggle hidden" title="Pluck the whole playlist">
               <input type="checkbox" id="playlist-check" checked />
               Playlist
@@ -104,6 +105,12 @@
               <ul id="meta-entries" class="meta-entries hidden"></ul>
             </div>
           </div>
+
+          <div id="analysis-bar" class="analysis-bar hidden">
+            <span id="analysis-summary" class="analysis-summary"></span>
+            <button id="pluck-all-btn" class="primary" disabled>Pluck all</button>
+          </div>
+          <div id="analysis-grid" class="analysis-grid hidden"></div>
 
           <div class="controls-row">
             <label class="field">

@@ -151,7 +151,7 @@ test("status bar shows engine state and the running version", async ({ page }) =
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.10.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.11.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {
@@ -347,6 +347,74 @@ test("a restored queue item downloads into the current folder, not an empty one"
   expect(started.destDir, "restored item kept an empty destDir").toBe(
     "C:\\Users\\test\\Videos",
   );
+});
+
+test("one link keeps the detail card, and plucking it empties the field", async ({
+  page,
+}) => {
+  await page.locator("#url-input").fill("https://www.youtube.com/watch?v=single");
+  await page.locator("#analyze-btn").click();
+
+  await expect(page.locator("#meta-card")).toBeVisible();
+  await expect(page.locator("#meta-title")).toHaveText("Video single");
+  await expect(page.locator("#analysis-grid")).toBeHidden();
+
+  const pluck = page.locator("#pluck-btn");
+  await expect(pluck).toBeEnabled();
+  await pluck.click();
+
+  // The link is in the queue now, so the field is empty again.
+  await expect(page.locator("#url-input")).toHaveValue("");
+  await expect(page.locator("#meta-card")).toBeHidden();
+  const started = await page.evaluate(
+    () => window.__invokeLog.filter((c) => c.cmd === "start_pluck").length,
+  );
+  expect(started).toBe(1);
+});
+
+test("several links become a grid of tiles, and a plucked tile leaves it", async ({
+  page,
+}) => {
+  await page.locator("#url-input").fill(
+    [
+      "https://www.youtube.com/watch?v=one",
+      "https://www.youtube.com/watch?v=two",
+      "https://www.youtube.com/watch?v=nothumb",
+    ].join("\n"),
+  );
+  await page.locator("#analyze-btn").click();
+
+  const tiles = page.locator("#analysis-grid .tile");
+  await expect(tiles).toHaveCount(3);
+  await expect(page.locator("#meta-card")).toBeHidden();
+  await expect(page.locator("#analysis-summary")).toContainText("3 ready");
+
+  // A link with no thumbnail says so on its own tile, and offers a refetch.
+  const bare = tiles.filter({ hasText: "Video nothumb" });
+  await expect(bare.locator(".tile-thumb-note")).toContainText("no thumbnail");
+  await expect(bare.locator(".tile-refetch")).toBeVisible();
+
+  // Plucking a tile starts the download and takes the tile off the grid.
+  await tiles.first().locator(".tile-pluck").click();
+  await expect(tiles).toHaveCount(2);
+  // The download is started through an invoke, which lands a tick later.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__invokeLog.filter((c) => c.cmd === "start_pluck").length,
+      ),
+    )
+    .toBe(1);
+
+  // Pluck all takes the rest of the grid.
+  await page.locator("#pluck-all-btn").click();
+  await expect(tiles).toHaveCount(0);
+
+  // The app runs one download at a time, so the other two wait their turn.
+  await expect(page.locator("#plucks tr.row")).toHaveCount(5);
+  await expect(
+    page.locator("#plucks tr.row").filter({ hasText: "Queued" }),
+  ).toHaveCount(2);
 });
 
 test("screenshots", async ({ page }, testInfo) => {
