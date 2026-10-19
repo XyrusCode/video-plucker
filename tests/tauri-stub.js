@@ -104,7 +104,7 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.8.0";
+          return "4.9.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;
@@ -120,7 +120,7 @@ window.__TAURI__ = {
             cookieFiles: 2,
             queueItems: 1,
             skippedQueueItems: 0,
-            appVersion: "4.8.0",
+            appVersion: "4.9.0",
           };
         case "import_dump":
           // Mirrors ImportResult in src-tauri/src/dump.rs, including the queue record's
@@ -206,12 +206,25 @@ window.__TAURI__ = {
   },
   app: {
     async getVersion() {
-      return "4.8.0";
+      return "4.9.0";
     },
   },
   updater: {
     async check() {
       return { shouldUpdate: false };
+    },
+  },
+  // The frameless window API. Recorded so a test can assert that the custom
+  // controls call the right window verb; hide() is what keeps close-to-tray.
+  window: {
+    getCurrentWindow() {
+      return {
+        minimize: async () => invokeLog.push({ cmd: "window.minimize", args: {} }),
+        toggleMaximize: async () => invokeLog.push({ cmd: "window.toggleMaximize", args: {} }),
+        hide: async () => invokeLog.push({ cmd: "window.hide", args: {} }),
+        isMaximized: async () => false,
+        onResized: async () => () => {},
+      };
     },
   },
 };
