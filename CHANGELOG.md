@@ -4,6 +4,21 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.0] - 2026-10-19
+
+### Added
+- **A download ledger.** Every finished download is recorded by its video id, so the app knows
+  what it already has.
+- **Duplicate check.** Analyzing a video you already have now says so and skips the download
+  instead of fetching it a second time. The match is on the id in the file name, so a video the
+  phone already has is recognised too once the two apps share a backup. There is a *Download
+  anyway* button when you want it anyway.
+
+### Changed
+- **Backups are now version 3.** A backup carries the download ledger alongside the settings,
+  cookies and queue, and importing one merges the ledger rather than replacing it. Backups from
+  older versions still import.
+
 ## [4.14.0] - 2026-10-19
 
 ### Added
