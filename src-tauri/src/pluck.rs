@@ -356,10 +356,10 @@ pub fn handle_line(
                 eta: num(p[5]),
             },
         );
-        LineOutcome::Progress {
+        return LineOutcome::Progress {
             item: index(p[0]),
             fraction: percent.map(|pc| pc / 100.0),
-        }
+        };
     } else if let Some(rest) = line.strip_prefix("ITEM|") {
         let p: Vec<&str> = rest.splitn(3, '|').collect();
         if p.len() < 3 {
@@ -375,7 +375,7 @@ pub fn handle_line(
                 title: p[2].to_string(),
             },
         );
-        LineOutcome::Nothing
+        return LineOutcome::Nothing;
     } else if let Some(rest) = line.strip_prefix("DONE|") {
         let p: Vec<&str> = rest.splitn(2, '|').collect();
         if p.len() < 2 {
@@ -389,7 +389,7 @@ pub fn handle_line(
                 filepath: p[1].to_string(),
             },
         );
-        LineOutcome::Nothing
+        return LineOutcome::Nothing;
     } else if line.starts_with("ERROR") {
         let failure = errors::classified(line, None);
         let _ = app.emit(
