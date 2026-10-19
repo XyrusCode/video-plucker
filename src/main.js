@@ -40,6 +40,14 @@ const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
 const navQueue = document.getElementById("nav-queue");
 const navSettings = document.getElementById("nav-settings");
+const railActiveCount = document.getElementById("rail-active-count");
+
+// status bar (DESIGN.md §5)
+const statusDot = document.getElementById("status-dot");
+const statusEngine = document.getElementById("status-engine");
+const statusActivity = document.getElementById("status-activity");
+const statusDest = document.getElementById("status-dest");
+const statusVersion = document.getElementById("status-version");
 const viewDownload = document.getElementById("view-download");
 const viewSearch = document.getElementById("view-search");
 const viewQueue = document.getElementById("view-queue");
@@ -67,6 +75,12 @@ const epRange = document.getElementById("ep-range");
 const epSelectAll = document.getElementById("ep-select-all");
 const epCount = document.getElementById("ep-count");
 const episodeList = document.getElementById("episode-list");
+
+// window controls (Windows-only frameless chrome, DESIGN.md §5)
+const windowControls = document.getElementById("window-controls");
+const winMinimize = document.getElementById("win-minimize");
+const winMaximize = document.getElementById("win-maximize");
+const winClose = document.getElementById("win-close");
 
 let store = null;
 let plucksStore = null; // persisted pluck records, for resume after a crash
@@ -516,6 +530,75 @@ function renderMeta(meta) {
   metaCard.classList.remove("hidden");
 }
 
+/* ---------- icons (one stroke weight, drawn SVG; DESIGN.md §7) ---------- */
+
+const ICON_PATHS = {
+  play: '<path d="M4.5 3.2v9.6l7.4-4.8-7.4-4.8Z" fill="currentColor"/>',
+  pause: '<path d="M4.5 3.5v9M11.5 3.5v9" stroke-linecap="round"/>',
+  close: '<path d="m4 4 8 8M12 4l-8 8" stroke-linecap="round"/>',
+  folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h2.7l1.3 1.5h5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-7Z" stroke-linejoin="round"/>',
+  clock: '<circle cx="8" cy="8" r="5.3"/><path d="M8 5v3.3l2 1.4" stroke-linecap="round"/>',
+  flag: '<path d="M4 14V2.5M4 3h7.5l-1.5 2.5L11.5 8H4" stroke-linejoin="round"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" stroke-linejoin="round"/>',
+  more: '<circle cx="3.5" cy="8" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor"/>',
+};
+
+const ICONS = Object.fromEntries(
+  Object.entries(ICON_PATHS).map(([name, body]) => [
+    name,
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">${body}</svg>`,
+  ]),
+);
+
+/* ---------- status bar (DESIGN.md §5) ---------- */
+
+// Per-job speeds in bytes/second, summed for the status bar.
+const jobSpeeds = new Map();
+let engineMessage = null;
+
+function recordSpeed(job, speed) {
+  jobSpeeds.set(job.id, speed || 0);
+  updateStatusBar();
+}
+
+/** Transient engine text ("Updating downloader…"), cleared on the next idle update. */
+function setEngine(message) {
+  engineMessage = message;
+  updateStatusBar();
+}
+
+function updateStatusBar() {
+  const all = [...jobs.values()];
+  const active = all.filter((j) => j.statusTextEl.textContent === "Plucking" || j.statusTextEl.textContent === "Processing");
+  const queued = jobQueue.length;
+  const paused = all.filter((j) => j.statusTextEl.textContent === "Paused").length;
+
+  let speed = 0;
+  for (const j of active) speed += jobSpeeds.get(j.id) || 0;
+  jobSpeeds.forEach((_, id) => {
+    if (!jobs.has(id)) jobSpeeds.delete(id);
+  });
+
+  const failed = all.some((j) => j.statusEl.className.includes("fail"));
+  const busy = Boolean(engineMessage) || active.length > 0;
+  statusDot.className = `status-dot${failed ? " error" : busy ? " busy" : ""}`;
+  statusEngine.textContent = engineMessage || (failed ? "Attention" : "Ready");
+
+  const parts = [];
+  if (active.length) parts.push(`${active.length} active`);
+  if (speed > 0) parts.push(`${fmtSpeed(speed)}`);
+  if (queued) parts.push(`${queued} queued`);
+  if (paused) parts.push(`${paused} paused`);
+  statusActivity.textContent = parts.length ? parts.join(" · ") : "Idle";
+
+  statusDest.textContent = destDir || "";
+  statusDest.title = destDir || "";
+  statusVersion.textContent = appVersionSpan?.textContent && appVersionSpan.textContent !== "Loading…"
+    ? `v${appVersionSpan.textContent}`
+    : "";
+  renderPlucksEmptyState();
+}
+
 /* ---------- plucks ---------- */
 
 // A "params" object fully describes a pluck: { url, quality, destDir,
@@ -525,35 +608,40 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   const isPlaylist = params.playlistMode;
   const itemCount = params.itemCount || 1;
 
-  const card = document.createElement("div");
-  card.className = "job-card flat-row";
+  // One row per download, and one extra row per playlist item inserted
+  // directly beneath it (DESIGN.md §6.2). The item rows live in the same
+  // tbody so expansion is a DOM insertion, not a second container.
+  const card = document.createElement("tr");
+  card.className = "row";
   card.innerHTML = `
-    <div class="job-head">
-      <button class="job-expand hidden" title="Show items">▸</button>
-      <span class="job-title"></span>
-      <span class="job-actions">
-        <button class="job-cancel">Cancel</button>
-        <button class="job-pause hidden">Pause</button>
-        <button class="job-resume hidden">Resume</button>
-        <button class="job-queue hidden">Queue</button>
-        <button class="job-report hidden">Report</button>
-        <button class="job-open hidden">Open folder</button>
-        <button class="job-dismiss hidden" title="Remove">✕</button>
+    <td>
+      <span class="cell-name">
+        <button class="cell-chevron hidden" aria-expanded="false" aria-label="Show items">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <path d="M3.5 1.5 7 5l-3.5 3.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <span class="name"></span>
       </span>
-    </div>
-    <div class="job-item-line hidden"></div>
-    <div class="bar overall"><div class="bar-fill"></div></div>
-    <div class="bar item hidden"><div class="bar-fill"></div></div>
-    <div class="job-stats">
-      <span class="job-speed"></span>
-      <span class="job-eta"></span>
-      <span class="job-status">Starting…</span>
-    </div>
-    <ul class="job-items hidden"></ul>
-    <div class="job-errors hidden"></div>
+    </td>
+    <td class="col-format cell-format"></td>
+    <td class="col-size num cell-size"></td>
+    <td>
+      <span class="progress-cell">
+        <span class="bar"><span class="bar-fill"></span></span>
+        <span class="progress-pct">0%</span>
+      </span>
+    </td>
+    <td><span class="cell-status"><span class="dot"></span><span class="status-text">Starting…</span></span></td>
+    <td><span class="cell-actions"></span></td>
   `;
-  card.querySelector(".job-title").textContent = params.title;
+  card.querySelector(".name").textContent = params.title;
   plucksEl.prepend(card);
+
+  // The status cell keeps the "ok"/"fail"/"paused"/"queued" classes the
+  // rest of the file already toggles, so those call sites are unchanged.
+  const statusEl = card.querySelector(".cell-status");
+  const actionsEl = card.querySelector(".cell-actions");
 
   const job = {
     id: jobId,
@@ -569,37 +657,48 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     friendlyError: null, // plain-language verdict shown to the user
     failureKind: null, // "login_required" | "stale_engine" | ...
     card,
-    itemLine: card.querySelector(".job-item-line"),
-    overallFill: card.querySelector(".bar.overall .bar-fill"),
-    itemBar: card.querySelector(".bar.item"),
-    itemFill: card.querySelector(".bar.item .bar-fill"),
-    speedEl: card.querySelector(".job-speed"),
-    etaEl: card.querySelector(".job-eta"),
-    statusEl: card.querySelector(".job-status"),
-    errorsEl: card.querySelector(".job-errors"),
-    itemsEl: card.querySelector(".job-items"),
-    cancelBtn: card.querySelector(".job-cancel"),
-    pauseBtn: card.querySelector(".job-pause"),
-    resumeBtn: card.querySelector(".job-resume"),
-    queueBtn: card.querySelector(".job-queue"),
-    reportBtn: card.querySelector(".job-report"),
-    openBtn: card.querySelector(".job-open"),
-    dismissBtn: card.querySelector(".job-dismiss"),
-    expandBtn: card.querySelector(".job-expand"),
+    actionsEl,
+    statusTextEl: card.querySelector(".status-text"),
+    itemLine: card.querySelector(".cell-name .name"),
+    overallFill: card.querySelector(".bar-fill"),
+    overallPct: card.querySelector(".progress-pct"),
+    sizeEl: card.querySelector(".cell-size"),
+    formatEl: card.querySelector(".cell-format"),
+    statusEl,
     itemRows: new Map(),
     queued: false,
+    // The seven buttons the old card carried as visible chips. They are
+    // reachable from the overflow menu now, so they are modelled as
+    // descriptors rather than as live DOM nodes.
+    menu: null,
   };
 
+  job.formatEl.textContent = params.quality ? qualityLabel(params.quality) : "";
+
+  // Hidden control elements. The event handlers below attach to these
+  // exactly as they did when they were visible buttons, so the download
+  // lifecycle is untouched; the overflow menu drives them.
+  const makeHiddenButton = (cls) => {
+    const b = document.createElement("button");
+    b.className = `job-control ${cls} hidden`;
+    actionsEl.appendChild(b);
+    return b;
+  };
+  job.cancelBtn = makeHiddenButton("job-cancel");
+  job.pauseBtn = makeHiddenButton("job-pause");
+  job.resumeBtn = makeHiddenButton("job-resume");
+  job.queueBtn = makeHiddenButton("job-queue");
+  job.reportBtn = makeHiddenButton("job-report");
+  job.openBtn = makeHiddenButton("job-open");
+  job.dismissBtn = makeHiddenButton("job-dismiss");
+
+  job.expandBtn = card.querySelector(".cell-chevron");
+  job.itemsEl = document.createElement("tbody");
+  job.itemsEl.className = "item-rows hidden";
+
   if (isPlaylist) {
-    job.itemBar.classList.remove("hidden");
-    job.itemLine.classList.remove("hidden");
-    job.itemLine.textContent = `${completed} / ${itemCount}`;
     job.expandBtn.classList.remove("hidden");
-    buildItemRows(job);
-    job.expandBtn.addEventListener("click", () => {
-      const open = job.itemsEl.classList.toggle("hidden") === false;
-      job.expandBtn.textContent = open ? "▾" : "▸";
-    });
+    job.expandBtn.addEventListener("click", () => toggleItems(job));
   }
 
   job.cancelBtn.addEventListener("click", async () => {
@@ -633,38 +732,194 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     removeFromActiveJobs(job);
     removeFromQueue(job);
     jobs.delete(jobId);
-    job.card.remove();
+    removeJob(job);
     renderPlucksEmptyState();
+    updateStatusBar();
     drainQueue();
   });
   job.openBtn.addEventListener("click", () => {
     if (job.lastFile) revealItemInDir(job.lastFile);
   });
 
+  renderRowActions(job);
+
   jobs.set(jobId, job);
   return job;
+}
+
+/**
+ * The action cell (DESIGN.md §6.2).
+ *
+ * One primary action stays visible because it is the thing the user is
+ * most likely to want; everything else lives in the overflow menu, so a
+ * resting table shows a name and a status rather than eight buttons.
+ */
+function renderRowActions(job) {
+  job.actionsEl.innerHTML = "";
+
+  const primary = primaryActionFor(job);
+  if (primary) {
+    const b = document.createElement("button");
+    b.className = "row-action";
+    b.type = "button";
+    b.setAttribute("aria-label", primary.label);
+    b.title = primary.label;
+    b.innerHTML = ICONS[primary.icon];
+    b.addEventListener("click", primary.run);
+    job.actionsEl.appendChild(b);
+  }
+
+  const extras = menuActionsFor(job);
+  if (!extras.length) return;
+
+  const more = document.createElement("button");
+  more.className = "row-action";
+  more.type = "button";
+  more.setAttribute("aria-label", `More actions for ${job.params.title || "this download"}`);
+  more.title = "More actions";
+  more.innerHTML = ICONS.more;
+  more.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMenu(more, extras);
+  });
+  job.actionsEl.appendChild(more);
+}
+
+/** The single action a row offers outside the menu, or null. */
+function primaryActionFor(job) {
+  const shown = (btn) => !btn.classList.contains("hidden");
+  if (shown(job.resumeBtn)) return { label: "Resume", icon: "play", run: () => resumeJob(job) };
+  if (shown(job.pauseBtn)) return { label: "Pause", icon: "pause", run: () => job.pauseBtn.click() };
+  if (shown(job.cancelBtn)) return { label: "Cancel", icon: "close", run: () => job.cancelBtn.click() };
+  if (shown(job.openBtn)) {
+    return {
+      label: "Reveal in folder",
+      icon: "folder",
+      run: () => {
+        if (job.lastFile) revealItemInDir(job.lastFile);
+      },
+    };
+  }
+  return null;
+}
+
+function menuActionsFor(job) {
+  const out = [];
+  const add = (btn, label, icon, danger = false) => {
+    if (btn.classList.contains("hidden")) return;
+    out.push({
+      label,
+      icon,
+      danger,
+      run: () => {
+        closeMenu();
+        btn.click();
+      },
+    });
+  };
+  add(job.pauseBtn, "Pause", "pause");
+  add(job.resumeBtn, "Resume", "play");
+  add(job.cancelBtn, "Cancel", "close");
+  add(job.queueBtn, "Park for later", "clock");
+  add(job.openBtn, "Reveal in folder", "folder");
+  add(job.reportBtn, "Report a problem", "flag");
+  add(job.dismissBtn, "Remove from list", "trash", true);
+  return out;
+}
+
+/* ---------- §6.3 the overflow menu ---------- */
+
+let openMenuEl = null;
+let openMenuTrigger = null;
+
+function openMenu(anchor, actions) {
+  closeMenu();
+  const menu = document.createElement("div");
+  menu.className = "overflow-menu";
+  menu.setAttribute("role", "menu");
+  for (const action of actions) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    if (action.danger) b.className = "danger";
+    b.innerHTML = `${ICONS[action.icon]}<span>${action.label}</span>`;
+    b.addEventListener("click", action.run);
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+
+  // Flip rather than clip when the menu would leave the viewport.
+  const r = anchor.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  const left = Math.min(r.right - m.width, window.innerWidth - m.width - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${r.bottom + 4}px`;
+
+  openMenuEl = menu;
+  openMenuTrigger = anchor;
+  anchor.setAttribute("aria-expanded", "true");
+  menu.querySelector("button")?.focus();
+}
+
+function closeMenu() {
+  if (!openMenuEl) return;
+  openMenuEl.remove();
+  openMenuEl = null;
+  openMenuTrigger?.setAttribute("aria-expanded", "false");
+  openMenuTrigger = null;
+}
+
+document.addEventListener("click", (e) => {
+  if (openMenuEl && !openMenuEl.contains(e.target)) closeMenu();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && openMenuEl) {
+    const trigger = openMenuTrigger;
+    closeMenu();
+    trigger?.focus();
+  }
+});
+
+/** Insert or remove the playlist item rows directly beneath their parent. */
+function toggleItems(job) {
+  const open = job.itemsEl.classList.contains("hidden");
+  if (open) {
+    buildItemRows(job);
+    job.card.after(job.itemsEl);
+  }
+  job.itemsEl.classList.toggle("hidden", !open);
+  job.expandBtn.setAttribute("aria-expanded", String(open));
+}
+
+function removeJob(job) {
+  job.itemsEl.remove();
+  job.card.remove();
 }
 
 function buildItemRows(job) {
   job.itemsEl.innerHTML = "";
   job.itemRows.clear();
   for (let i = 1; i <= job.itemCount; i++) {
-    const li = document.createElement("li");
-    li.className = "pl-item";
-    li.dataset.state = "queued";
-    li.innerHTML = `
-      <span class="pl-idx"></span>
-      <span class="pl-title"></span>
-      <span class="pl-state">queued</span>
-      <div class="pl-bar"><div class="pl-fill"></div></div>`;
-    li.querySelector(".pl-idx").textContent = i;
-    li.querySelector(".pl-title").textContent = job.titles[i - 1] || `Item ${i}`;
-    job.itemsEl.appendChild(li);
+    const tr = document.createElement("tr");
+    tr.className = "item-row";
+    tr.dataset.state = "queued";
+    tr.innerHTML = `
+      <td><span class="item-title"></span></td>
+      <td class="col-format"></td>
+      <td class="col-size num"></td>
+      <td><span class="bar"><span class="bar-fill warn"></span></span></td>
+      <td><span class="cell-status"><span class="dot"></span><span class="state-text">Queued</span></span></td>
+      <td></td>`;
+    tr.querySelector(".item-title").textContent =
+      `${i}. ${job.titles[i - 1] || `Item ${i}`}`;
+    job.itemsEl.appendChild(tr);
     job.itemRows.set(i, {
-      li,
-      title: li.querySelector(".pl-title"),
-      state: li.querySelector(".pl-state"),
-      fill: li.querySelector(".pl-fill"),
+      tr,
+      title: tr.querySelector(".item-title"),
+      state: tr.querySelector(".state-text"),
+      status: tr.querySelector(".cell-status"),
+      fill: tr.querySelector(".bar-fill"),
     });
   }
   // when resuming, items already recorded in the archive are done
@@ -674,16 +929,20 @@ function buildItemRows(job) {
 function markItem(job, index, state, title) {
   const row = job.itemRows.get(index);
   if (!row) return;
-  if (title) row.title.textContent = title;
-  row.li.dataset.state = state;
+  if (title) row.title.textContent = `${index}. ${title}`;
+  row.tr.dataset.state = state;
   if (state === "done") {
-    row.state.textContent = "done";
+    row.state.textContent = "Done";
+    row.status.className = "cell-status ok";
     row.fill.style.width = "100%";
+    row.fill.className = "bar-fill ok";
   } else if (state === "active") {
-    row.state.textContent = "plucking";
-    row.li.scrollIntoView({ block: "nearest" });
+    row.state.textContent = "Plucking";
+    row.status.className = "cell-status paused";
+    row.tr.scrollIntoView({ block: "nearest" });
   } else if (state === "failed") {
-    row.state.textContent = "skipped";
+    row.state.textContent = "Failed";
+    row.status.className = "cell-status fail";
   }
 }
 
@@ -692,8 +951,8 @@ function markItem(job, index, state, title) {
 async function beginPluck(job, { fresh }) {
   job.queued = false;
   job.card.classList.remove("done");
-  job.statusEl.className = "job-status";
-  job.statusEl.textContent = "Starting…";
+  job.statusEl.className = "cell-status";
+  job.statusTextEl.textContent = "Starting";
   job.cancelBtn.classList.remove("hidden");
   job.cancelBtn.disabled = false;
   job.pauseBtn.classList.remove("hidden");
@@ -703,10 +962,9 @@ async function beginPluck(job, { fresh }) {
   job.reportBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
   job.dismissBtn.classList.add("hidden");
-  const failmsg = job.card.querySelector(".job-failmsg");
+  const failmsg = job.card.parentElement.querySelector(`[data-fail-for="${job.id}"]`);
   if (failmsg) failmsg.remove();
-  job.errorsEl.classList.add("hidden");
-  job.errorsEl.innerHTML = "";
+  renderRowActions(job);
 
   if (fresh) {
     await saveRecord({ jobId: job.id, ...job.params, completed: 0, status: "active" });
@@ -736,7 +994,8 @@ async function beginPluck(job, { fresh }) {
         cookiesFromBrowser: job.params.cookiesFromBrowser ?? null,
       });
     }
-    job.statusEl.textContent = "Plucking…";
+    job.statusTextEl.textContent = "Plucking";
+    renderRowActions(job);
   } catch (err) {
     finishJob(job, { ok: false, cancelled: false, error: String(err) });
   }
@@ -759,11 +1018,12 @@ async function resumeJob(job) {
 async function enqueueJob(job, { fresh }) {
   job.queued = true;
   jobQueue.push({ job, fresh });
-  job.statusEl.textContent = "Queued";
-  job.statusEl.classList.add("queued");
+  job.statusTextEl.textContent = "Queued";
+  job.statusEl.className = "cell-status queued";
   job.pauseBtn.classList.add("hidden");
   job.cancelBtn.classList.remove("hidden");
   job.cancelBtn.disabled = false;
+  renderRowActions(job);
   drainQueue();
 }
 
@@ -880,33 +1140,34 @@ function setOverall(job, itemFraction) {
   const overall = job.isPlaylist
     ? (job.completed + itemFraction) / job.itemCount
     : itemFraction;
-  job.overallFill.style.width = `${Math.min(100, overall * 100).toFixed(1)}%`;
+  const pct = Math.min(100, overall * 100);
+  job.overallFill.style.width = `${pct.toFixed(1)}%`;
+  job.overallPct.textContent = `${Math.round(pct)}%`;
 }
 
 function finishJob(job, { ok, cancelled, error }) {
   removeFromActiveJobs(job);
   job.cancelBtn.classList.add("hidden");
   job.pauseBtn.classList.add("hidden");
-  job.speedEl.textContent = "";
-  job.etaEl.textContent = "";
   if (ok) {
     job.card.classList.add("done");
     job.overallFill.style.width = "100%";
-    job.itemBar.classList.add("hidden");
-    job.statusEl.textContent = "Completed";
-    job.statusEl.classList.add("ok");
+    job.overallFill.className = "bar-fill ok";
+    job.overallPct.textContent = "100%";
+    job.statusTextEl.textContent = "Completed";
+    job.statusEl.className = "cell-status ok";
     if (job.lastFile) job.openBtn.classList.remove("hidden");
     removeRecord(job.id);
   } else if (cancelled) {
-    job.statusEl.textContent = "Cancelled";
-    job.statusEl.classList.add("cancelled");
+    job.statusTextEl.textContent = "Cancelled";
+    job.statusEl.className = "cell-status";
     removeRecord(job.id);
   } else {
     // Failed: plain-language verdict only (raw lines are kept for reports),
-    // and "Queue for later" replaces retry as the primary action.
+    // and "Park for later" replaces retry as the primary action.
     if (error) appendError(job, error);
-    job.statusEl.textContent = "Failed";
-    job.statusEl.classList.add("fail");
+    job.statusTextEl.textContent = "Failed";
+    job.statusEl.className = "cell-status fail";
     showFailMessage(job, job.friendlyError || "Download failed.");
     if (job.lastFile) job.openBtn.classList.remove("hidden");
     job.queueBtn.classList.remove("hidden");
@@ -920,16 +1181,23 @@ function finishJob(job, { ok, cancelled, error }) {
       rawErrors: job.rawErrors.join("\n"),
     });
   }
+  renderRowActions(job);
+  updateStatusBar();
   drainQueue();
 }
 
 function showFailMessage(job, message) {
-  const old = job.card.querySelector(".job-failmsg");
+  const old = job.card.parentElement.querySelector(`[data-fail-for="${job.id}"]`);
   if (old) old.remove();
-  const line = document.createElement("div");
-  line.className = "job-failmsg";
-  line.textContent = message;
-  job.card.appendChild(line);
+  const tr = document.createElement("tr");
+  tr.className = "item-row";
+  tr.dataset.failFor = job.id;
+  const td = document.createElement("td");
+  td.colSpan = 6;
+  td.innerHTML = `<span class="notice error"></span>`;
+  td.firstChild.textContent = message;
+  tr.appendChild(td);
+  job.card.after(tr);
 }
 
 function appendError(job, message, friendly = null, kind = null) {
@@ -954,26 +1222,29 @@ function rankFailureKind(kind) {
 clearHistoryBtn.addEventListener("click", async () => {
   const toRemove = [];
   for (const [id, job] of jobs) {
-    const status = job.card.querySelector(".job-status");
-    const isFinished = status?.classList.contains("ok") || status?.classList.contains("cancelled") || status?.classList.contains("fail");
-    if (isFinished) {
-      toRemove.push(id);
-    }
+    const cls = job.statusEl.className;
+    if (cls.includes(" ok") || cls.includes(" fail")) toRemove.push(id);
+    else if (job.statusTextEl.textContent === "Cancelled") toRemove.push(id);
   }
   for (const id of toRemove) {
     const job = jobs.get(id);
     if (job) {
       await removeRecord(id);
-      job.card.remove();
+      removeJob(job);
       jobs.delete(id);
     }
   }
   renderPlucksEmptyState();
+  updateStatusBar();
 });
 
 /** The Pluck tab's downloads list needs its own empty state: it is no longer a global strip. */
 function renderPlucksEmptyState() {
   plucksEmpty.classList.toggle("hidden", jobs.size > 0);
+  document.getElementById("downloads-table").classList.toggle("hidden", jobs.size === 0);
+  const active = [...jobs.values()].filter((j) => j.statusTextEl.textContent === "Plucking").length;
+  railActiveCount.hidden = active === 0;
+  railActiveCount.textContent = String(active);
 }
 
 /* ---------- backend events ---------- */
@@ -989,10 +1260,8 @@ listen("pluck://item-start", ({ payload }) => {
     }
     job.activeIndex = payload.itemIndex;
     markItem(job, payload.itemIndex, "active", payload.title);
-    job.itemLine.textContent = `${payload.itemIndex} / ${job.itemCount} — ${payload.title}`;
-    job.itemFill.style.width = "0%";
   }
-  job.statusEl.textContent = "Plucking…";
+  job.statusTextEl.textContent = "Plucking";
 });
 
 listen("pluck://progress", ({ payload }) => {
@@ -1000,14 +1269,13 @@ listen("pluck://progress", ({ payload }) => {
   if (!job) return;
   const fraction = payload.percent != null ? payload.percent / 100 : 0;
   if (job.isPlaylist) {
-    job.itemFill.style.width = `${(fraction * 100).toFixed(1)}%`;
     const idx = payload.itemIndex || job.activeIndex;
     const row = job.itemRows.get(idx);
     if (row) row.fill.style.width = `${(fraction * 100).toFixed(1)}%`;
   }
   setOverall(job, fraction);
-  job.speedEl.textContent = fmtSpeed(payload.speed);
-  job.etaEl.textContent = payload.eta != null ? `ETA ${fmtEta(payload.eta)}` : "";
+  if (payload.total_bytes) job.sizeEl.textContent = fmtBytes(payload.total_bytes);
+  recordSpeed(job, payload.speed);
 });
 
 listen("pluck://item-done", ({ payload }) => {
@@ -1017,13 +1285,12 @@ listen("pluck://item-done", ({ payload }) => {
   if (job.isPlaylist) {
     markItem(job, payload.itemIndex, "done");
     job.completed = Math.min(payload.itemIndex, job.itemCount);
-    job.itemLine.textContent = `${job.completed} / ${job.itemCount}`;
     setOverall(job, 0);
     patchRecord(job.id, { completed: job.completed });
   } else {
     job.completed = 1;
     setOverall(job, 1);
-    job.statusEl.textContent = "Processing…";
+    job.statusTextEl.textContent = "Processing";
   }
 });
 
@@ -1039,8 +1306,9 @@ listen("pluck://error", ({ payload }) => {
 listen("pluck://status", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
-  job.statusEl.className = "job-status";
-  job.statusEl.textContent = payload.message;
+  job.statusEl.className = "cell-status";
+  job.statusTextEl.textContent = payload.message;
+  setEngine(payload.message);
 });
 
 listen("pluck://done", ({ payload }) => {
@@ -1057,25 +1325,22 @@ listen("pluck://done", ({ payload }) => {
 listen("pluck://paused", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
-  job.statusEl.textContent = "Paused";
-  job.statusEl.classList.add("paused");
+  job.statusTextEl.textContent = "Paused";
+  job.statusEl.className = "cell-status paused";
   job.pauseBtn.classList.add("hidden");
   job.cancelBtn.classList.add("hidden");
   job.resumeBtn.classList.remove("hidden");
   job.dismissBtn.classList.remove("hidden");
-  job.speedEl.textContent = "";
-  job.etaEl.textContent = "";
+  job.speed = 0;
   patchRecord(job.id, { status: "paused", completed: job.completed });
+  renderRowActions(job);
+  updateStatusBar();
 });
 
 listen("pluck://cookies", ({ payload }) => {
   const job = jobs.get(payload.jobId);
   if (!job) return;
-  job.errorsEl.classList.remove("hidden");
-  const line = document.createElement("div");
-  line.className = "job-info";
-  line.textContent = `Using cookies: ${payload.file}`;
-  job.errorsEl.appendChild(line);
+  job.statusTextEl.textContent = `Using cookies: ${payload.file}`;
 });
 
 /* ---------- queue for later ---------- */
@@ -1098,8 +1363,9 @@ async function queueForLater(job) {
   removeFromActiveJobs(job);
   removeFromQueue(job);
   jobs.delete(job.id);
-  job.card.remove();
+  removeJob(job);
   renderPlucksEmptyState();
+  updateStatusBar();
   await removeRecord(job.id);
   await renderQueue();
 }
@@ -1129,43 +1395,53 @@ async function sortedQueueEntries() {
 async function renderQueue() {
   const sorted = await sortedQueueEntries();
   const count = sorted.filter(({ item }) => item?.params).length;
-  queueSub.textContent = count
+queueSub.textContent = count
     ? `${count} parked ${count === 1 ? "download" : "downloads"}, oldest first`
     : "Parked downloads waiting for you";
   queueList.innerHTML = "";
   queueEmpty.classList.toggle("hidden", count > 0);
+  document.getElementById("queue-table").classList.toggle("hidden", count === 0);
   queueStartAllBtn.classList.toggle("hidden", count === 0);
   for (const { key, item } of sorted) {
     if (!item || !item.params) continue;
-    const row = document.createElement("div");
-    row.className = "queue-row flat-row";
-    row.innerHTML = `
-      <div class="queue-info">
-        <span class="queue-title"></span>
-        <span class="queue-sub"></span>
-      </div>
-      <span class="job-actions">
-        <button class="queue-start">Start</button>
-        <button class="ghost ghost-danger queue-delete">Delete</button>
-      </span>
+    const tr = document.createElement("tr");
+    tr.className = "row";
+    tr.innerHTML = `
+      <td><span class="name"></span></td>
+      <td class="col-format"></td>
+      <td><span class="cell-status queued"><span class="reason"></span></span></td>
+      <td><span class="cell-actions"></span></td>
     `;
-    row.querySelector(".queue-title").textContent =
-      item.params.title || "Untitled download";
-    const bits = [
-      item.params.kind === "stream" ? `${item.params.episodes?.length || 1} episode(s)` : null,
-      item.params.quality ? qualityLabel(item.params.quality) : null,
-      item.friendly || "Failed earlier",
-    ].filter(Boolean);
-    row.querySelector(".queue-sub").textContent = bits.join(" · ");
-    row.querySelector(".queue-start").addEventListener("click", () =>
-      startQueued(key, item)
-    );
-    row.querySelector(".queue-delete").addEventListener("click", async () => {
+    tr.querySelector(".name").textContent = item.params.title || "Untitled download";
+    tr.querySelector(".col-format").textContent = item.params.quality
+      ? qualityLabel(item.params.quality)
+      : "";
+    tr.querySelector(".reason").textContent = item.friendly || "Failed earlier";
+
+    const actions = tr.querySelector(".cell-actions");
+    const start = document.createElement("button");
+    start.className = "row-action";
+    start.type = "button";
+    start.setAttribute("aria-label", "Start this download");
+    start.title = "Start";
+    start.innerHTML = ICONS.play;
+    start.addEventListener("click", () => startQueued(key, item));
+
+    const remove = document.createElement("button");
+    remove.className = "row-action danger";
+    remove.type = "button";
+    remove.setAttribute("aria-label", "Delete from queue");
+    remove.title = "Delete";
+    remove.innerHTML = ICONS.trash;
+    remove.addEventListener("click", async () => {
       await queueStore.delete(key);
       await renderQueue();
     });
-    queueList.appendChild(row);
+
+    actions.append(start, remove);
+    queueList.appendChild(tr);
   }
+  updateStatusBar();
 }
 
 function qualityLabel(q) {
@@ -1323,9 +1599,10 @@ const views = {
 function showView(which) {
   for (const [name, [navBtn, viewEl]] of Object.entries(views)) {
     const on = name === which;
-    viewEl.classList.toggle("hidden", !on);
+    viewEl.classList.toggle("active", on);
     navBtn.classList.toggle("active", on);
-    navBtn.setAttribute("aria-current", on ? "page" : "false");
+    if (on) navBtn.setAttribute("aria-current", "page");
+    else navBtn.removeAttribute("aria-current");
   }
 }
 
@@ -1398,19 +1675,19 @@ function renderResults(results) {
     card.className = "result-card";
     card.innerHTML = `
       <div class="result-poster"></div>
-      <div class="result-meta">
-        <span class="result-title"></span>
-        <span class="badge badge-${r.kind}">${r.kind}</span>
-      </div>`;
+      <div class="result-title"></div>
+      <div class="result-sub"></div>`;
     const poster = card.querySelector(".result-poster");
     if (r.poster) {
       poster.style.backgroundImage = `url("${r.poster.replace(/"/g, "%22")}")`;
     } else {
       poster.classList.add("no-poster");
-      poster.textContent = "▶";
+      poster.setAttribute("aria-hidden", "true");
     }
     card.querySelector(".result-title").textContent =
       r.year ? `${r.title} (${r.year})` : r.title;
+    card.querySelector(".result-sub").textContent =
+      r.kind === "series" ? "Series" : "Movie";
     card.addEventListener("click", () => openDetail(r));
     searchResults.appendChild(card);
   }
@@ -1490,18 +1767,18 @@ function renderEpisodes() {
   const season = currentSeason();
   episodeList.innerHTML = "";
   season.episodes.forEach((ep, i) => {
-    const li = document.createElement("li");
-    li.className = "pl-item ep-row";
-    li.innerHTML = `
+    const row = document.createElement("label");
+    row.className = "episode-row";
+    row.innerHTML = `
       <input type="checkbox" class="ep-check" />
-      <span class="pl-idx"></span>
-      <span class="pl-title"></span>`;
-    li.querySelector(".pl-idx").textContent = ep.number;
-    li.querySelector(".pl-title").textContent = ep.title || `Episode ${ep.number}`;
-    const check = li.querySelector(".ep-check");
+      <span class="episode-idx"></span>
+      <span class="episode-title"></span>`;
+    row.querySelector(".episode-idx").textContent = ep.number;
+    row.querySelector(".episode-title").textContent = ep.title || `Episode ${ep.number}`;
+    const check = row.querySelector(".ep-check");
     check.dataset.index = String(i);
     check.addEventListener("change", updateEpCount);
-    episodeList.appendChild(li);
+    episodeList.appendChild(row);
   });
   updateEpCount();
 }
@@ -1731,7 +2008,7 @@ function showUpdateBanner(version, body) {
   if (existing) existing.remove();
 
   const banner = document.createElement("div");
-  banner.className = "update-banner chrome";
+  banner.className = "update-banner";
   banner.innerHTML = `
     <span>Video Plucker <strong>v${version}</strong> is available.</span>
     <div class="update-actions">
@@ -1861,8 +2138,10 @@ async function initSettingsPage() {
   try {
     const version = await invoke("get_app_version");
     appVersionSpan.textContent = version;
+    updateStatusBar();
   } catch {
     appVersionSpan.textContent = "Unknown";
+    updateStatusBar();
   }
 
   // Event listeners
@@ -1893,4 +2172,44 @@ async function initSettingsPage() {
 function updateConcurrentDownloadsVisibility() {
   const isParallel = downloadModeSelect.value === "parallel";
   concurrentDownloadsRow.classList.toggle("enabled", isParallel);
+}
+/* ---------- settings panes (DESIGN.md §6.4) ---------- */
+
+document.querySelectorAll(".settings-nav-item").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".settings-nav-item").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".settings-pane").forEach((pane) => {
+      pane.classList.toggle("active", pane.id === btn.dataset.pane);
+    });
+  });
+});
+
+/* ---------- window chrome (DESIGN.md §5) ----------
+   The custom title bar exists only on Windows. Elsewhere the native window
+   decorations stay on and this file must not draw a second title bar. */
+
+function applyChrome() {
+  const windows = /Windows/i.test(navigator.userAgent);
+  document.body.dataset.chrome = windows ? "windows" : "native";
+  windowControls.hidden = !windows;
+  return windows;
+}
+
+function currentWindow() {
+  return window.__TAURI__?.window?.getCurrentWindow?.() ?? null;
+}
+
+if (applyChrome()) {
+  winMinimize.addEventListener("click", () => currentWindow()?.minimize());
+  winMaximize.addEventListener("click", () => currentWindow()?.toggleMaximize());
+  // Close hides to the tray, matching the Rust CloseRequested handler.
+  winClose.addEventListener("click", () => currentWindow()?.hide());
+
+  const syncMaximize = async () => {
+    const w = currentWindow();
+    const max = w ? await w.isMaximized() : false;
+    winMaximize.setAttribute("aria-label", max ? "Restore" : "Maximise");
+  };
+  currentWindow()?.onResized?.(syncMaximize);
+  syncMaximize();
 }

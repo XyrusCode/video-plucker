@@ -7,172 +7,111 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main>
-      <!-- BrandTopBar -->
-      <header class="brand-bar">
-        <div class="logo" aria-hidden="true">
+    <!-- ===== Title bar (DESIGN.md §5). Windows-only drag region and
+         window controls; on macOS and Linux the window keeps its native
+         decorations and only the brand shows. ===== -->
+    <header class="titlebar">
+      <div class="titlebar-brand">
+        <span class="titlebar-logo" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm2 4v8l6-4-6-4Z" />
+            <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm2.5 4v8l7-4-7-4Z" />
           </svg>
-        </div>
-        <span class="wordmark">Video Plucker</span>
-        <span class="brand-action"></span>
-      </header>
+        </span>
+        <span>Video Plucker</span>
+      </div>
+      <div class="titlebar-controls" id="window-controls" hidden>
+        <button class="winbtn" id="win-minimize" aria-label="Minimise to tray">
+          <svg viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><rect y="4.5" width="10" height="1" /></svg>
+        </button>
+        <button class="winbtn" id="win-maximize" aria-label="Maximise">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="9" height="9" />
+          </svg>
+        </button>
+        <button class="winbtn close" id="win-close" aria-label="Close to tray">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+            <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" />
+          </svg>
+        </button>
+      </div>
+    </header>
 
-      <!-- PillRow -->
-      <nav class="pill-row" aria-label="Sections">
-        <button id="nav-download" class="pill-chip active">Pluck</button>
-        <button id="nav-queue" class="pill-chip">Queue</button>
-        <button id="nav-search" class="pill-chip">Search</button>
-        <button id="nav-settings" class="pill-chip">Settings</button>
-      </nav>
+    <!-- ===== Rail (DESIGN.md §5) ===== -->
+    <nav class="rail" aria-label="Sections">
+      <button id="nav-download" class="rail-item active" aria-current="page" title="Pluck">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 15.5h12" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="rail-text">Pluck</span>
+        <span class="rail-count" id="rail-active-count" hidden></span>
+      </button>
+      <button id="nav-queue" class="rail-item" title="Queue">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M4 5.5h12M4 10h12M4 14.5h7" stroke-linecap="round" />
+        </svg>
+        <span class="rail-text">Queue</span>
+      </button>
+      <button id="nav-search" class="rail-item" title="Search">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="9" cy="9" r="5" /><path d="m12.8 12.8 3.2 3.2" stroke-linecap="round" />
+        </svg>
+        <span class="rail-text">Search</span>
+      </button>
+      <button id="nav-settings" class="rail-item" title="Settings">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="10" cy="10" r="2.4" />
+          <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" stroke-linecap="round" />
+        </svg>
+        <span class="rail-text">Settings</span>
+      </button>
+      <div class="rail-spacer"></div>
+    </nav>
 
-      <!-- ============ Pluck view ============ -->
-      <section id="view-download" class="view">
-        <div class="screen-header">
-          <div class="screen-text">
-            <h1 class="screen-title">Pluck</h1>
-            <p class="screen-sub">Paste a link to grab it</p>
+    <!-- ===== Work area (DESIGN.md §6) ===== -->
+    <main class="main">
+      <!-- ============ Pluck ============ -->
+      <section id="view-download" class="view active">
+        <div class="view-header">
+          <h1 class="view-title">Pluck</h1>
+          <div class="view-actions">
+            <button id="clear-history-btn" class="quiet">Clear finished</button>
           </div>
         </div>
 
-        <div class="url-row">
-          <input
-            id="url-input"
-            type="text"
-            placeholder="Paste a YouTube or X (Twitter) video or playlist URL…"
-            spellcheck="false"
-          />
-          <label id="playlist-toggle" class="playlist-toggle hidden" title="Pluck the whole playlist">
-            <input type="checkbox" id="playlist-check" checked />
-            Playlist
-          </label>
-          <button id="analyze-btn">Analyze</button>
-        </div>
-
-        <p id="analyze-error" class="error-text hidden"></p>
-
-        <div id="meta-card" class="hidden">
-          <img id="meta-thumb" alt="" />
-          <div class="meta-info">
-            <h2 id="meta-title"></h2>
-            <p id="meta-sub"></p>
-            <ul id="meta-entries" class="hidden"></ul>
+        <div class="view-body">
+          <div class="controls-row">
+            <input
+              id="url-input"
+              class="grow"
+              type="text"
+              placeholder="Paste a YouTube or X (Twitter) video or playlist URL"
+              spellcheck="false"
+            />
+            <label id="playlist-toggle" class="playlist-toggle hidden" title="Pluck the whole playlist">
+              <input type="checkbox" id="playlist-check" checked />
+              Playlist
+            </label>
+            <button id="analyze-btn">Analyze</button>
           </div>
-        </div>
 
-        <div class="options-row">
-          <label class="field-label">
-            Format
-            <select id="quality-select">
-              <option value="best">Best available</option>
-              <option value="2160">2160p (4K)</option>
-              <option value="1440">1440p</option>
-              <option value="1080">1080p</option>
-              <option value="720">720p</option>
-              <option value="480">480p</option>
-              <option value="mp3">Audio only — MP3</option>
-              <option value="m4a">Audio only — M4A</option>
-            </select>
-          </label>
-          <label class="field-label" title="Use a browser's login cookies to get past YouTube's bot check">
-            YouTube login
-            <select id="cookies-select">
-              <option value="none">None</option>
-              <option value="chrome">Chrome</option>
-              <option value="edge">Edge</option>
-              <option value="firefox">Firefox</option>
-              <option value="brave">Brave</option>
-              <option value="opera">Opera</option>
-              <option value="vivaldi">Vivaldi</option>
-            </select>
-          </label>
-          <div class="folder-picker">
-            <span id="dest-dir" class="path-display" title=""></span>
-            <button id="browse-btn">Browse…</button>
-          </div>
-          <button id="pluck-btn" class="primary" disabled>Pluck</button>
-        </div>
+          <p id="analyze-error" class="error-text hidden"></p>
 
-        <!-- Downloads live under Pluck, matching the phone. -->
-        <div class="screen-header">
-          <div class="screen-text">
-            <h2 class="section-title">Downloads</h2>
-          </div>
-          <div class="screen-actions">
-            <button id="clear-history-btn" class="ghost ghost-danger">Clear finished</button>
-          </div>
-        </div>
-        <p id="plucks-empty" class="cookie-empty">
-          Nothing downloaded yet. Paste a link above and press Analyze.
-        </p>
-        <div id="plucks" class="list"></div>
-      </section>
-
-      <!-- ============ Queue view ============ -->
-      <section id="view-queue" class="view hidden">
-        <div class="screen-header">
-          <div class="screen-text">
-            <h1 class="screen-title">Queue</h1>
-            <p id="queue-sub" class="screen-sub">Parked downloads waiting for you</p>
-          </div>
-          <div class="screen-actions">
-            <button id="queue-start-all-btn" class="ghost">Start all</button>
-          </div>
-        </div>
-
-        <p id="queue-empty" class="cookie-empty">
-          Nothing queued. When a download fails, press “Queue” to park it here and
-          try again whenever you like.
-        </p>
-        <div id="queue-list" class="list"></div>
-      </section>
-
-      <!-- ============ Search view (streaming sites) ============ -->
-      <section id="view-search" class="view hidden">
-        <div class="screen-header">
-          <div class="screen-text">
-            <h1 class="screen-title">Search</h1>
-            <p class="screen-sub">Streaming sites the desktop app supports</p>
-          </div>
-        </div>
-
-        <div class="search-row">
-          <select id="site-select" title="Which site to search"></select>
-          <input
-            id="search-input"
-            type="text"
-            placeholder="Search a show or movie…"
-            spellcheck="false"
-          />
-          <label class="translation-toggle" title="Subtitled or dubbed">
-            <select id="translation-select">
-              <option value="sub">Sub</option>
-              <option value="dub">Dub</option>
-            </select>
-          </label>
-          <button id="search-btn" class="primary">Search</button>
-        </div>
-
-        <p id="search-error" class="error-text hidden"></p>
-
-        <section id="search-results" class="results-grid well hidden"></section>
-
-        <section id="result-detail" class="hidden">
-          <div class="detail-head">
-            <img id="detail-poster" alt="" />
-            <div class="detail-info">
-              <h2 id="detail-title"></h2>
-              <p id="detail-sub"></p>
-              <button id="detail-back" class="ghost">← Back to results</button>
+          <div id="meta-card" class="meta-card hidden">
+            <img id="meta-thumb" alt="" />
+            <div class="meta-info">
+              <h2 id="meta-title"></h2>
+              <p id="meta-sub"></p>
+              <ul id="meta-entries" class="meta-entries hidden"></ul>
             </div>
           </div>
 
-          <div class="detail-controls">
-            <label class="field-label">
-              Format
-              <select id="stream-quality">
+          <div class="controls-row">
+            <label class="field">
+              <span class="field-label">Format</span>
+              <select id="quality-select">
                 <option value="best">Best available</option>
+                <option value="2160">2160p (4K)</option>
+                <option value="1440">1440p</option>
                 <option value="1080">1080p</option>
                 <option value="720">720p</option>
                 <option value="480">480p</option>
@@ -180,201 +119,328 @@
                 <option value="m4a">Audio only — M4A</option>
               </select>
             </label>
-            <button id="stream-download" class="primary">Download</button>
+            <label class="field" title="Use a browser's login cookies to get past YouTube's bot check">
+              <span class="field-label">YouTube login</span>
+              <select id="cookies-select">
+                <option value="none">None</option>
+                <option value="chrome">Chrome</option>
+                <option value="edge">Edge</option>
+                <option value="firefox">Firefox</option>
+                <option value="brave">Brave</option>
+                <option value="opera">Opera</option>
+                <option value="vivaldi">Vivaldi</option>
+              </select>
+            </label>
+            <div class="field grow">
+              <span class="field-label">Destination</span>
+              <div class="controls-row">
+                <span id="dest-dir" class="path-display grow" title=""></span>
+                <button id="browse-btn">Browse…</button>
+              </div>
+            </div>
+            <button id="pluck-btn" class="primary" disabled>Pluck</button>
           </div>
 
-          <div id="series-picker" class="hidden">
-            <div class="season-row">
-              <label class="field-label">
-                Season
-                <select id="season-select"></select>
-              </label>
-              <input
-                id="ep-range"
-                type="text"
-                placeholder="Range, e.g. 5-12, 15"
-                spellcheck="false"
-              />
-              <button id="ep-select-all" class="ghost">Select all</button>
-              <span id="ep-count" class="ep-count"></span>
-            </div>
-            <ul id="episode-list" class="job-items well"></ul>
+          <!-- Downloads live under Pluck, matching the phone. -->
+          <table class="table" id="downloads-table">
+            <colgroup>
+              <col class="c-name" />
+              <col class="c-format col-format" />
+              <col class="c-size col-size" />
+              <col class="c-progress" />
+              <col class="c-status" />
+              <col class="c-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col" class="col-format">Format</th>
+                <th scope="col" class="col-size num">Size</th>
+                <th scope="col">Progress</th>
+                <th scope="col">Status</th>
+                <th scope="col" style="width: 1%"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="plucks"></tbody>
+          </table>
+          <div id="plucks-empty" class="empty">
+            <span class="empty-title">Nothing downloaded yet</span>
+            <span>Paste a link above and press Analyze.</span>
           </div>
-        </section>
+        </div>
       </section>
 
-      <!-- ============ Settings view ============ -->
-      <section id="view-settings" class="view hidden">
-        <div class="screen-header">
-          <div class="screen-text">
-            <h1 class="screen-title">Settings</h1>
-            <p class="screen-sub">Manage your app preferences and data.</p>
+      <!-- ============ Queue ============ -->
+      <section id="view-queue" class="view">
+        <div class="view-header">
+          <h1 class="view-title">Queue</h1>
+          <span id="queue-sub" class="view-sub">Parked downloads waiting for you</span>
+          <div class="view-actions">
+            <button id="queue-start-all-btn" class="quiet">Start all</button>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="icon-chip accent" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.6a4 4 0 1 0 2 3.4V9h4V3h-6Z" /></svg>
-            </div>
-            <div class="grow">
-              <div class="section-header">
-                <span class="section-dot"></span>
-                <span class="section-title">Downloads</span>
-              </div>
-              <p class="section-desc">Control how downloads behave when the connection drops.</p>
-            </div>
-          </div>
-
-          <div class="setting-row">
-            <label class="field-label">
-              Download mode
-              <select id="download-mode-select">
-                <option value="queue">Queue (one at a time)</option>
-                <option value="parallel">Parallel (multiple downloads)</option>
-              </select>
-            </label>
-            <span class="section-desc" style="padding-left: 0">
-              Queue mode downloads one video at a time. Parallel mode downloads several at once.
-            </span>
-          </div>
-
-          <div class="setting-row" id="concurrent-downloads-row">
-            <label class="field-label">
-              Max concurrent downloads
-              <select id="max-concurrent-select">
-                <option value="2">2 downloads</option>
-                <option value="3">3 downloads</option>
-                <option value="4">4 downloads</option>
-                <option value="5">5 downloads</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="setting-row">
-            <div class="folder-picker">
-              <span id="settings-dest-dir" class="path-display" title=""></span>
-              <button id="settings-browse-btn">Browse…</button>
-            </div>
+        <div class="view-body">
+          <table class="table" id="queue-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col" class="col-format">Format</th>
+                <th scope="col">Parked because</th>
+                <th scope="col" style="width: 1%"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="queue-list"></tbody>
+          </table>
+          <div id="queue-empty" class="empty">
+            <span class="empty-title">Nothing queued</span>
+            <span>When a download fails, park it here and start it again whenever you like.</span>
           </div>
         </div>
+      </section>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="icon-chip" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V4h2v5Z" /></svg>
-            </div>
-            <div class="grow">
-              <div class="section-header">
-                <span class="section-dot"></span>
-                <span class="section-title">Updates</span>
-              </div>
-              <p class="section-desc">Check for new versions and read release notes.</p>
-            </div>
-          </div>
-
-          <div class="toggle setting-divider">
-            <span class="toggle-text">
-              <span class="toggle-title">Auto-update</span>
-              <span class="toggle-desc">Check for new versions once per day when the app starts.</span>
-            </span>
-            <input type="checkbox" id="auto-update-check" checked />
-          </div>
-
-          <div class="card-actions">
-            <button id="check-updates-btn">Check for updates</button>
-          </div>
+      <!-- ============ Search ============ -->
+      <section id="view-search" class="view">
+        <div class="view-header">
+          <h1 class="view-title">Search</h1>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="icon-chip" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.2 14.2L11 13V7h1.5v5.2l4.4 2.7-.7 1.3Z" /></svg>
-            </div>
-            <div class="grow">
-              <div class="section-header">
-                <span class="section-dot"></span>
-                <span class="section-title">Cookies</span>
-              </div>
-              <p class="section-desc">
-                Import a cookies.txt file per site so yt-dlp can download age-restricted or
-                private content. A profile named after a site serves any URL containing it, so
-                <code>x</code> covers x.com and twitter.com.
-              </p>
-            </div>
-          </div>
-
-          <div class="cookie-add">
+        <div class="view-body">
+          <div class="search-bar">
+            <select id="site-select" title="Which site to search"></select>
             <input
-              id="cookie-name-input"
-              type="text"
-              placeholder="Set name, e.g. insta"
+              id="search-input"
+              type="search"
+              placeholder="Search a show or movie"
               spellcheck="false"
             />
-            <button id="cookie-add-btn">Import cookies.txt…</button>
+            <select id="translation-select" title="Subtitled or dubbed">
+              <option value="sub">Sub</option>
+              <option value="dub">Dub</option>
+            </select>
+            <button id="search-btn" class="primary">Search</button>
           </div>
-          <p id="cookie-error" class="error-text hidden"></p>
-          <div class="cookie-body" id="cookie-body" style="margin-top: 10px"></div>
+
+          <p id="search-error" class="error-text hidden"></p>
+
+          <section id="search-results" class="results-grid hidden"></section>
+
+          <section id="result-detail" class="detail hidden">
+            <img id="detail-poster" alt="" class="detail-poster" />
+            <div class="detail-info">
+              <h2 id="detail-title"></h2>
+              <p id="detail-sub"></p>
+
+              <div class="controls-row">
+                <label class="field">
+                  <span class="field-label">Format</span>
+                  <select id="stream-quality">
+                    <option value="best">Best available</option>
+                    <option value="1080">1080p</option>
+                    <option value="720">720p</option>
+                    <option value="480">480p</option>
+                    <option value="mp3">Audio only — MP3</option>
+                    <option value="m4a">Audio only — M4A</option>
+                  </select>
+                </label>
+                <button id="stream-download" class="primary">Download</button>
+                <button id="detail-back" class="quiet">Back to results</button>
+              </div>
+
+              <div id="series-picker" class="setting-block hidden">
+                <div class="search-bar">
+                  <label class="field">
+                    <span class="field-label">Season</span>
+                    <select id="season-select"></select>
+                  </label>
+                  <label class="field grow">
+                    <span class="field-label">Episodes</span>
+                    <input id="ep-range" type="text" placeholder="Range, e.g. 5-12, 15" spellcheck="false" />
+                  </label>
+                  <button id="ep-select-all" class="quiet">Select all</button>
+                  <span id="ep-count" class="field-hint"></span>
+                </div>
+                <div id="episode-list" class="episode-list"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============ Settings, two panes (DESIGN.md §6.4) ============ -->
+      <section id="view-settings" class="view">
+        <div class="view-header">
+          <h1 class="view-title">Settings</h1>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="icon-chip" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm1 10.6V14h-2v-6h2v5.6l3.3 2-.9 1.7-3.4-2.1v-.6Z" /></svg>
-            </div>
-            <div class="grow">
-              <div class="section-header">
-                <span class="section-dot"></span>
-                <span class="section-title">Backup &amp; Restore</span>
+        <div class="settings">
+          <nav class="settings-nav" aria-label="Settings sections">
+            <button class="settings-nav-item active" data-pane="pane-downloads">Downloads</button>
+            <button class="settings-nav-item" data-pane="pane-updates">Updates</button>
+            <button class="settings-nav-item" data-pane="pane-cookies">Cookies</button>
+            <button class="settings-nav-item" data-pane="pane-backup">Backup &amp; Restore</button>
+            <button class="settings-nav-item" data-pane="pane-about">About</button>
+          </nav>
+
+          <div class="settings-pane active" id="pane-downloads">
+            <div class="settings-pane-inner">
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Download mode</span>
+                  <p class="setting-desc">
+                    Queue downloads one at a time. Parallel downloads several at once.
+                  </p>
+                </div>
+                <div class="setting-control">
+                  <select id="download-mode-select">
+                    <option value="queue">Queue</option>
+                    <option value="parallel">Parallel</option>
+                  </select>
+                </div>
               </div>
-              <p class="section-desc">
-                Export your settings, site logins and download queue to a file, then import it on
-                another machine. The desktop and Android apps read the same format, so a dump
-                moves between either one. The dump contains live login cookies; keep the file
-                private. Importing replaces any cookie set with the same name, and a queued
-                playlist comes back as a single item.
-              </p>
+
+              <div class="setting-row" id="concurrent-downloads-row">
+                <div class="setting-text">
+                  <span class="setting-title">Max concurrent downloads</span>
+                  <p class="setting-desc">Only used in parallel mode.</p>
+                </div>
+                <div class="setting-control">
+                  <select id="max-concurrent-select">
+                    <option value="2">2 downloads</option>
+                    <option value="3">3 downloads</option>
+                    <option value="4">4 downloads</option>
+                    <option value="5">5 downloads</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Destination folder</span>
+                  <p class="setting-desc">Where downloaded files are written.</p>
+                </div>
+                <div class="setting-control">
+                  <span id="settings-dest-dir" class="path-display" title=""></span>
+                  <button id="settings-browse-btn">Browse…</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="card-actions">
-            <button id="export-dump-btn">Export dump</button>
-            <button id="import-dump-btn">Import dump</button>
-          </div>
-          <p id="dump-status" class="section-desc hidden" style="padding-left: 0"></p>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <div class="icon-chip" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 17h2v-6h-2v6Zm1-15a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm-1-11h2V7h-2v2Z" /></svg>
-            </div>
-            <div class="grow">
-              <div class="section-header">
-                <span class="section-dot"></span>
-                <span class="section-title">About</span>
+          <div class="settings-pane" id="pane-updates">
+            <div class="settings-pane-inner">
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Check for updates automatically</span>
+                  <p class="setting-desc">Check once per day when the app starts.</p>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="auto-update-check" checked />
+                  </label>
+                </div>
               </div>
-              <div class="version-row" style="margin-top: 4px">
-                <span class="version-label">Version</span>
-                <span id="app-version">Loading…</span>
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Update now</span>
+                  <p class="setting-desc">Check the releases feed and install a newer version.</p>
+                </div>
+                <div class="setting-control">
+                  <button id="check-updates-btn">Check for updates</button>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="setting-actions">
-            <button id="website-btn">Our software</button>
-            <button id="discord-btn">Discord support</button>
-            <button id="view-terms-btn">Terms of Use</button>
+          <div class="settings-pane" id="pane-cookies">
+            <div class="settings-pane-inner">
+              <div class="setting-block">
+                <span class="setting-section-title">Site cookies</span>
+                <p class="setting-desc">
+                  Import a cookies.txt per site so yt-dlp can download age-restricted or
+                  private content. A profile named after a site serves any URL containing it,
+                  so <code>x</code> covers x.com and twitter.com.
+                </p>
+                <div class="controls-row">
+                  <input
+                    id="cookie-name-input"
+                    type="text"
+                    placeholder="Set name, e.g. insta"
+                    spellcheck="false"
+                  />
+                  <button id="cookie-add-btn">Import cookies.txt…</button>
+                </div>
+                <p id="cookie-error" class="error-text hidden"></p>
+                <div id="cookie-body" class="cookie-body"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-pane" id="pane-backup">
+            <div class="settings-pane-inner">
+              <div class="setting-block">
+                <span class="setting-section-title">Export and import</span>
+                <p class="setting-desc">
+                  Move your settings, site logins and download queue between this machine
+                  and the Android app, or between two computers. A dump contains live login
+                  cookies, so keep the file private. Importing replaces any cookie set with
+                  the same name, and a parked playlist comes back as a single item.
+                </p>
+                <div class="controls-row">
+                  <button id="export-dump-btn">Export dump</button>
+                  <button id="import-dump-btn">Import dump</button>
+                </div>
+                <p id="dump-status" class="field-hint hidden"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-pane" id="pane-about">
+            <div class="settings-pane-inner">
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Version</span>
+                  <p class="setting-desc">The running desktop build.</p>
+                </div>
+                <div class="setting-control">
+                  <span id="app-version">Loading…</span>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Links</span>
+                  <p class="setting-desc">Our software, support, and the terms this build ships under.</p>
+                </div>
+                <div class="setting-control">
+                  <button id="website-btn">Our software</button>
+                  <button id="discord-btn">Discord support</button>
+                  <button id="view-terms-btn">Terms of Use</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
     </main>
 
-    <!-- Terms of Use modal (shown on first launch) -->
-    <div id="terms-overlay" class="hidden">
-      <div class="terms-modal">
-        <h2>Terms of Use</h2>
-        <div class="terms-body">
+    <!-- ===== Status bar (DESIGN.md §5) ===== -->
+    <footer class="statusbar">
+      <span class="statusbar-engine">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-engine">Ready</span>
+      </span>
+      <span class="statusbar-activity" id="status-activity">Idle</span>
+      <span class="statusbar-dest" id="status-dest" title=""></span>
+      <span class="statusbar-version" id="status-version"></span>
+    </footer>
+
+    <!-- Terms of Use modal, shown on first launch -->
+    <div id="terms-overlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>Terms of Use</h2>
+        </div>
+        <div class="modal-body">
           <p><strong>Video Plucker</strong> is a video download tool for personal use.</p>
 
           <h3>1. Responsible Use</h3>
@@ -395,7 +461,7 @@
           <h3>6. Changes to These Terms</h3>
           <p>These terms may be updated in future releases. Continued use of the software after an update constitutes acceptance of the revised terms.</p>
         </div>
-        <div class="terms-actions">
+        <div class="modal-foot">
           <button id="terms-accept-btn" class="primary">I Accept</button>
         </div>
       </div>

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Video Plucker",
+        "width": 920,
+        "height": 680,
+        "minWidth": 700,
+        "minHeight": 500,
+        "decorations": false,
+        "shadow": true,
+        "resizable": true
+      }
+    ]
+  }
+}
