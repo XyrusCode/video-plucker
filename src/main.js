@@ -656,6 +656,10 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     rawErrors: [], // technical yt-dlp lines, only ever sent in issue reports
     friendlyError: null, // plain-language verdict shown to the user
     failureKind: null, // "login_required" | "stale_engine" | ...
+    // The failure notice is a sibling row of the job row, so it has to be
+    // removed with it. The job holds the element instead of the DOM being
+    // searched for it, so no path that clears a job can leave one behind.
+    failRow: null,
     card,
     actionsEl,
     statusTextEl: card.querySelector(".status-text"),
@@ -900,6 +904,12 @@ function toggleItems(job) {
 function removeJob(job) {
   job.itemsEl.remove();
   job.card.remove();
+  // The failure notice is a sibling of the job row. Removing the row without
+  // it left the "Download failed." box on screen after the download was gone.
+  if (job.failRow) {
+    job.failRow.remove();
+    job.failRow = null;
+  }
 }
 
 function buildItemRows(job) {
@@ -967,8 +977,11 @@ async function beginPluck(job, { fresh }) {
   job.reportBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
   job.dismissBtn.classList.add("hidden");
-  const failmsg = job.card.parentElement.querySelector(`[data-fail-for="${job.id}"]`);
-  if (failmsg) failmsg.remove();
+  const failmsg = job.failRow;
+  if (failmsg) {
+    failmsg.remove();
+    job.failRow = null;
+  }
   renderRowActions(job);
 
   if (fresh) {
@@ -1195,8 +1208,7 @@ function finishJob(job, { ok, cancelled, error }) {
 }
 
 function showFailMessage(job, message) {
-  const old = job.card.parentElement.querySelector(`[data-fail-for="${job.id}"]`);
-  if (old) old.remove();
+  if (job.failRow) job.failRow.remove();
   const tr = document.createElement("tr");
   tr.className = "item-row";
   tr.dataset.failFor = job.id;
@@ -1206,6 +1218,7 @@ function showFailMessage(job, message) {
   td.firstChild.textContent = message;
   tr.appendChild(td);
   job.card.after(tr);
+  job.failRow = tr;
 }
 
 function appendError(job, message, friendly = null, kind = null) {

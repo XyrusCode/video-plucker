@@ -68,6 +68,22 @@ const plucks = {
     completed: 0,
     status: "interrupted",
   },
+  // A failure that outlived a restart. It renders the failure notice row, so
+  // the smoke test can check that clearing the download takes the notice with it.
+  "10": {
+    jobId: 10,
+    url: "https://www.youtube.com/watch?v=failedvideo",
+    quality: "1080",
+    destDir: "C:\\Users\\test\\Videos",
+    playlistMode: false,
+    title: "A Failed Download",
+    itemCount: 1,
+    completed: 0,
+    status: "failed",
+    failureKind: "login_required",
+    friendly: "YouTube requires a logged-in account to download this.",
+    rawErrors: "ERROR: Sign in to confirm you're not a bot.",
+  },
 };
 
 // The Terms of Use modal is a full-screen overlay shown on first launch. The smoke test

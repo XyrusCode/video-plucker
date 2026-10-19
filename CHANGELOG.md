@@ -4,6 +4,14 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.9.1] - 2026-10-19
+
+### Fixed
+- **A cleared download took its failure text with it.** The failure notice is a sibling row of
+  the download row. Removing the download row left the notice behind, so "Download failed."
+  stayed on screen with nothing behind it. Clearing a download, removing it from the list, or
+  parking it for later now takes the notice with it.
+
 ## [4.9.0] - 2026-10-19
 
 ### Changed
