@@ -3,6 +3,7 @@ mod commands;
 mod dump;
 mod engine;
 mod errors;
+mod ledger;
 mod extractors;
 mod pluck;
 mod retry;
@@ -172,6 +173,9 @@ pub fn run() {
             bookmarks::list_youtube_lists,
             dump::export_dump,
             dump::import_dump,
+            ledger::ledger_entries,
+            ledger::ledger_record,
+            ledger::find_duplicate,
             search_commands::list_sites,
             search_commands::search_content,
             search_commands::get_series_detail,

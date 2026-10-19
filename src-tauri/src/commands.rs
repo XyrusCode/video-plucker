@@ -25,6 +25,8 @@ pub struct Metadata {
     entry_count: Option<u64>,
     entries: Vec<String>,
     source: String, // yt-dlp extractor, e.g. "Youtube", "Twitter"
+    /// yt-dlp video id, for the duplicate check. None for a playlist.
+    id: Option<String>,
 }
 
 fn extractor_of(v: &Value) -> String {
@@ -408,6 +410,7 @@ pub async fn fetch_metadata(
             entry_count: Some(count),
             entries: titles,
             source: extractor_of(&v),
+            id: None,
         })
     } else {
         let mut heights: Vec<u32> = v
@@ -440,6 +443,7 @@ pub async fn fetch_metadata(
             entry_count: None,
             entries: vec![],
             source: extractor_of(&v),
+            id: v.get("id").and_then(Value::as_str).map(String::from),
         })
     }
 }

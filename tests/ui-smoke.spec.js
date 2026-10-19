@@ -379,6 +379,43 @@ test("one link keeps the detail card, and plucking it empties the field", async 
   expect(started).toBe(1);
 });
 
+test("a video already on the device is not queued, and can be forced", async ({
+  page,
+}) => {
+  // The stub reports the id "dupe" as already downloaded.
+  await page.locator("#url-input").fill("https://www.youtube.com/watch?v=dupe");
+  await page.locator("#analyze-btn").click();
+
+  await expect(page.locator("#meta-card")).toBeVisible();
+  await expect(page.locator("#duplicate-banner")).toBeVisible();
+  await expect(page.locator("#duplicate-text")).toHaveText(
+    "Already downloaded: Video dupe",
+  );
+
+  // Pluck does not start a download.
+  await page.locator("#pluck-btn").click();
+  let started = await page.evaluate(
+    () => window.__invokeLog.filter((c) => c.cmd === "start_pluck").length,
+  );
+  expect(started).toBe(0);
+
+  // Download anyway does.
+  await page.locator("#duplicate-force").click();
+  started = await page.evaluate(
+    () => window.__invokeLog.filter((c) => c.cmd === "start_pluck").length,
+  );
+  expect(started).toBe(1);
+});
+
+test("a video that is not on the device shows no duplicate notice", async ({
+  page,
+}) => {
+  await page.locator("#url-input").fill("https://www.youtube.com/watch?v=fresh");
+  await page.locator("#analyze-btn").click();
+  await expect(page.locator("#meta-card")).toBeVisible();
+  await expect(page.locator("#duplicate-banner")).toBeHidden();
+});
+
 test("several links become a grid of tiles, and a plucked tile leaves it", async ({
   page,
 }) => {
