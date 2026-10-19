@@ -83,6 +83,9 @@ Confirmed functionality:
 - Pluck several links at once: paste them one per line, and each is analysed
   into a tile of a grid, with the ones that could not be read offering to be
   fetched again.
+- Read the videos the user saved on YouTube, X, TikTok and VK, using the
+  cookies they already imported for those sites. Read-only: nothing can be
+  removed from the site it came from.
 - Search a streaming-site catalogue, then download a movie directly or
   batch-select a series' episodes by range or checkbox.
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, audio-only MP3/M4A.

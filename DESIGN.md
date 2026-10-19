@@ -170,9 +170,9 @@ blur. A border under a wide shadow is the ghost card and is banned.
 ├──────────┬────────────────────────────────────────────────────┤
 │ Pluck    │  Downloads                         Clear finished  │
 │ Queue    │  Name          Format  Size    Progress   Status    │ 28
-│ Search   │  ─────────────────────────────────────────────────  │ hairline
-│ Settings │  A Video       1080p   642 MB  ▓▓▓▓░░░    Plucking │ 34
-│          │                                                    │
+│ Saved    │  ─────────────────────────────────────────────────  │ hairline
+│ Search   │  A Video       1080p   642 MB  ▓▓▓▓░░░    Plucking │ 34
+│ Settings │                                                    │
 ├──────────┴────────────────────────────────────────────────────┤
 │ ● Ready   2 active · 4.1 MB/s    C:\Users\me\Videos    v4.9.0  │ 26
 └───────────────────────────────────────────────────────────────┘
@@ -191,15 +191,15 @@ puts actions in its title bar is a web page in a window.
 
 ### Rail (`208px`, collapsing to `56px` below 880px`)
 
-Four destinations, icon and label, in the order they are used. Active item:
+Five destinations, icon and label, in the order they are used. Active item:
 `--surface-hover` fill, a 2px `--accent` bar on the leading edge, `--text`
-label. Inactive: `--text-2`, no fill. The icon rail below 880px is the same four
-items with the label hidden and the icon centred; there is no separate code path,
-only a width and a media query.
+label. Inactive: `--text-2`, no fill. The icon rail below 880px is the same
+five items with the label hidden and the icon centred; there is no separate
+code path, only a width and a media query.
 
-The rail is collapsed rather than hidden because the app has four destinations,
-not four dozen. Losing the labels at the app's minimum width is a real loss; it
-is the right trade, and the icons carry tooltips via `title`.
+The rail is collapsed rather than hidden because the app has five destinations,
+not fifty. Losing the labels at the app's minimum width is a real loss; it is
+the right trade, and the icons carry tooltips via `title`.
 
 ### Status bar (`26px`)
 
@@ -290,6 +290,24 @@ analysed into a grid of tiles, one per link, a few at a time.
   apply to every tile in it.
 - A tile that has been plucked leaves the grid: it is in the downloads table
   now, and keeping it in the grid would say it was waiting.
+
+### 6.8 Saved
+
+The videos the user saved on other sites, read with the cookies they already
+imported for those sites.
+
+- It is a grid of the same tiles as §6.7. Saved videos are content, and a
+  table of rows would make a list of twenty of them a list of twenty rows.
+- The site filter offers the sites the user has a login for, and nothing
+  else. A site without a login is not read, so offering it would lead to an
+  empty list that looks like a bug.
+- The YouTube list picker appears only when YouTube is connected.
+- It is read once per session, not on every visit. The Refresh button is the
+  way back to the network.
+- One site refusing does not hide the others. A site that could not be read
+  says so under the controls, and the sites that did answer still show.
+- Read-only. Nothing here can be removed from the site it came from, because
+  those endpoints answer with success whether or not they did anything.
 
 ---
 

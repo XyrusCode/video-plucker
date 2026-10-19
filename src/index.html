@@ -51,6 +51,12 @@
         </svg>
         <span class="rail-text">Queue</span>
       </button>
+      <button id="nav-saved" class="rail-item" title="Saved">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M6 3.5h8a1 1 0 0 1 1 1v11.2l-5-3-5 3V4.5a1 1 0 0 1 1-1Z" stroke-linejoin="round" />
+        </svg>
+        <span class="rail-text">Saved</span>
+      </button>
       <button id="nav-search" class="rail-item" title="Search">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
           <circle cx="9" cy="9" r="5" /><path d="m12.8 12.8 3.2 3.2" stroke-linecap="round" />
@@ -202,6 +208,38 @@
           <div id="queue-empty" class="empty">
             <span class="empty-title">Nothing queued</span>
             <span>When a download fails, park it here and start it again whenever you like.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Saved ============ -->
+      <section id="view-saved" class="view">
+        <div class="view-header">
+          <h1 class="view-title">Saved</h1>
+          <div class="view-actions">
+            <button id="saved-refresh-btn" class="quiet">Refresh</button>
+          </div>
+        </div>
+
+        <div class="view-body">
+          <div class="saved-bar">
+            <label class="field">
+              <span class="field-label">Site</span>
+              <select id="saved-site-select"></select>
+            </label>
+            <label class="field" id="saved-list-field" hidden>
+              <span class="field-label">YouTube list</span>
+              <select id="saved-list-select"></select>
+            </label>
+            <span id="saved-summary" class="field-hint"></span>
+          </div>
+
+          <p id="saved-error" class="error-text hidden"></p>
+
+          <div id="saved-grid" class="analysis-grid"></div>
+          <div id="saved-empty" class="empty">
+            <span class="empty-title">Nothing saved here</span>
+            <span>Import a site's cookies.txt in Settings, then refresh.</span>
           </div>
         </div>
       </section>

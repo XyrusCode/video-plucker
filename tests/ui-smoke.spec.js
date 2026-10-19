@@ -99,9 +99,9 @@ test("every cached getElementById in main.js resolves", async ({ page }) => {
   expect(missing, "ids referenced by main.js but absent from index.html").toEqual([]);
 });
 
-test("the rail has four destinations and exactly one is active", async ({ page }) => {
+test("the rail has five destinations and exactly one is active", async ({ page }) => {
   // DESIGN.md §5: a rail, not pill chips.
-  await expect(page.locator(".rail .rail-item")).toHaveCount(4);
+  await expect(page.locator(".rail .rail-item")).toHaveCount(5);
   await expect(page.locator(".rail .rail-item.active")).toHaveCount(1);
   await expect(page.locator(".rail .rail-item.active")).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".pill-chip, .pill-row")).toHaveCount(0);
@@ -111,6 +111,7 @@ test("each rail item shows its view and moves the active marker", async ({ page 
   const tabs = [
     ["nav-download", "view-download"],
     ["nav-queue", "view-queue"],
+    ["nav-saved", "view-saved"],
     ["nav-search", "view-search"],
     ["nav-settings", "view-settings"],
   ];
@@ -151,7 +152,7 @@ test("status bar shows engine state and the running version", async ({ page }) =
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.11.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.12.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {
@@ -177,7 +178,13 @@ test("no button uses a gradient (§10)", async ({ page }) => {
 });
 
 test("every screen has a title", async ({ page }) => {
-  for (const id of ["view-download", "view-queue", "view-search", "view-settings"]) {
+  for (const id of [
+    "view-download",
+    "view-queue",
+    "view-saved",
+    "view-search",
+    "view-settings",
+  ]) {
     const title = await page.evaluate(
       (viewId) => document.getElementById(viewId).querySelector(".view-title")?.textContent?.trim() ?? "",
       id,
@@ -415,6 +422,32 @@ test("several links become a grid of tiles, and a plucked tile leaves it", async
   await expect(
     page.locator("#plucks tr.row").filter({ hasText: "Queued" }),
   ).toHaveCount(2);
+});
+
+test("the Saved view reads the sites the user has a login for", async ({ page }) => {
+  await page.locator("#nav-saved").click();
+
+  await expect(page.locator("#saved-grid .tile")).toHaveCount(2);
+  await expect(page.locator("#saved-summary")).toContainText("2 saved videos");
+
+  // The site filter offers the sites that are connected, and nothing else.
+  await expect(page.locator("#saved-site-select option")).toHaveCount(3);
+  await expect(page.locator("#saved-site-select option").first()).toHaveText("All");
+  await expect(page.locator("#saved-site-select option").nth(1)).toHaveText("YouTube");
+
+  // YouTube is connected, so its lists are offered.
+  await expect(page.locator("#saved-list-select")).toBeVisible();
+  await expect(page.locator("#saved-list-select option").first()).toHaveText("Watch Later");
+
+  // A saved video plucks like any other link.
+  await page.locator("#saved-grid .tile .tile-pluck").first().click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__invokeLog.filter((c) => c.cmd === "start_pluck").length,
+      ),
+    )
+    .toBe(1);
 });
 
 test("screenshots", async ({ page }, testInfo) => {

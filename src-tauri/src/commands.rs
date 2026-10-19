@@ -112,7 +112,7 @@ fn platform_aliases(platform: Option<&str>) -> &'static [&'static str] {
 /// through [`detect_platform`] so x.com → "twitter" and youtu.be → "youtube"
 /// keep working for existing users, and vk.com URLs accept any profile whose
 /// name contains "vk" or "vkontakte" (e.g. "vk", "vk_video", "vkontakte").
-fn settings_cookie_file(dir: &std::path::Path, url: &str) -> Option<String> {
+pub(crate) fn settings_cookie_file(dir: &std::path::Path, url: &str) -> Option<String> {
     let lower = url.to_lowercase();
     let aliases = platform_aliases(detect_platform(&lower));
     let mut candidates: Vec<(usize, String, std::path::PathBuf)> = Vec::new();
