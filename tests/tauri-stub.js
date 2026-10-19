@@ -176,8 +176,25 @@ window.__TAURI__ = {
             entryCount: null,
             entries: [],
             source: "Youtube",
+            // The real command returns the yt-dlp video id, which the duplicate check needs.
+            id,
           };
         }
+        case "find_duplicate":
+          // A link whose id is "dupe" is treated as already downloaded, so the test can
+          // drive the skip path. Everything else is a fresh video.
+          return args.id === "dupe"
+            ? {
+                title: "Video dupe",
+                fileName: "Video dupe [dupe].mp4",
+                source: "ledger",
+                downloadedAt: 1700000000000,
+              }
+            : null;
+        case "ledger_entries":
+          return [];
+        case "ledger_record":
+          return null;
         case "start_pluck":
           // Recorded rather than stubbed so a test can assert on what would have been
           // handed to yt-dlp, such as an empty -P from a restored queue item.
@@ -188,6 +205,7 @@ window.__TAURI__ = {
             cookieFiles: 2,
             queueItems: 1,
             skippedQueueItems: 0,
+            ledgerEntries: 0,
             appVersion: "4.9.0",
           };
         case "import_dump":
@@ -199,6 +217,7 @@ window.__TAURI__ = {
             cookieFiles: 1,
             queueItems: 1,
             skippedQueueItems: 0,
+            ledgerEntries: 0,
             appVersion: "7.1.0",
             prefs: { autoUpdate: false },
             queue: [

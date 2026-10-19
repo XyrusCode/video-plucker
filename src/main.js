@@ -475,6 +475,9 @@ function clearInput() {
   pluckBtn.disabled = true;
   currentMeta = null;
   metaCard.classList.add("hidden");
+  // The duplicate notice belongs to the video that was just handed off. Leaving it up would
+  // claim the next video was already downloaded.
+  hideDuplicate();
 }
 
 /** The message an analysis failure shows, wherever it is shown. */
@@ -590,6 +593,7 @@ async function analyzeTile(tile) {
       playlistMode: isPlaylistUrl(tile.url) && playlistCheck.checked,
       cookiesFromBrowser: cookiesFromBrowser(),
     });
+    meta.duplicate = meta.id ? await findDuplicate(meta.id) : null;
     tile.meta = meta;
     tile.state = "ready";
   } catch (err) {
@@ -651,7 +655,11 @@ function paintTile(tile) {
   tile.el.dataset.state = tile.state;
   if (tile.state === "ready" && meta) {
     tile.title.textContent = meta.title;
-    tile.sub.textContent = [prettySource(meta.source), fmtDuration(meta.duration)]
+    tile.sub.textContent = [
+      meta.duplicate ? "Already downloaded" : "",
+      prettySource(meta.source),
+      fmtDuration(meta.duration),
+    ]
       .filter(Boolean)
       .join(" · ");
     tile.pluckBtn.disabled = false;
@@ -714,6 +722,11 @@ function hideBatch() {
 
 async function pluckTile(tile) {
   if (!tile.meta) return;
+  // Auto-skip: a tile for a video already on the device is not queued.
+  if (tile.meta.duplicate) {
+    tile.sub.textContent = "Already downloaded - not queued";
+    return;
+  }
   await startPluck(tile.url, tile.meta);
   removeTile(tile);
 }
@@ -721,6 +734,11 @@ async function pluckTile(tile) {
 pluckAllBtn.addEventListener("click", async () => {
   const ready = batchTiles.filter((t) => t.state === "ready");
   for (const tile of ready) {
+    // A tile for a video already on the device is skipped, not queued.
+    if (tile.meta?.duplicate) {
+      tile.sub.textContent = "Already downloaded - not queued";
+      continue;
+    }
     await startPluck(tile.url, tile.meta);
     removeTile(tile);
   }
@@ -1373,6 +1391,9 @@ async function startPluck(url, meta) {
     title: meta.title,
     itemCount: isPlaylist ? meta.entryCount : 1,
     cookiesFromBrowser: cookiesFromBrowser(),
+    // The video id travels with the job so a parked item can be duplicate-checked when it
+    // starts. Null for a playlist, which has no single id.
+    videoId: meta.id || null,
   };
   const jobId = nextJobId++;
   await saveSetting("nextJobId", nextJobId);
@@ -1848,6 +1869,18 @@ function qualityLabel(q) {
 
 async function startQueued(key, item) {
   await queueStore.delete(key);
+  // A parked item carries the id it was analyzed with, so a video downloaded since it was
+  // parked is caught here too. An item from an older backup has no id and is not checked.
+  const videoId = item.params?.videoId;
+  if (videoId) {
+    const duplicate = await findDuplicate(videoId);
+    if (duplicate) {
+      // renderQueue rewrites the sub-line, so the note goes after it.
+      await renderQueue();
+      queueSub.textContent = "Skipped one: already downloaded.";
+      return;
+    }
+  }
   const jobId = nextJobId++;
   await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, {
