@@ -936,7 +936,7 @@ fn parse_youtube_playlist_page(body: &str) -> (Vec<SavedItem>, Option<String>) {
     // The next-page token lives wherever YouTube put it this time, so look
     // once at the whole response instead of guessing the container.
     let mut continuation = None;
-    walk_renderers(&root, &mut |key, value| {
+    walk_renderers(Some(&root), &mut |key, value| {
         if key == "continuationItemRenderer" && continuation.is_none() {
             continuation = value
                 .get("continuationEndpoint")
@@ -960,7 +960,7 @@ fn youtube_item(value: &Value) -> Option<SavedItem> {
         .get("title")
         .and_then(first_run)
         .or_else(|| value.get("headline").and_then(first_run))
-        .unwrap_or("YouTube video");
+        .unwrap_or_else(|| "YouTube video".to_string());
     let channel = value
         .get("shortBylineText")
         .and_then(first_run)
@@ -1005,7 +1005,7 @@ fn parse_youtube_playlists(body: &str) -> Vec<SavedList> {
     };
     let mut seen: HashSet<String> = HashSet::new();
     let contents = root.get("contents").cloned().unwrap_or(Value::Null);
-    walk_renderers(&contents, &mut |key, value| {
+    walk_renderers(Some(&contents), &mut |key, value| {
         match key {
             "playlistRenderer" => {
                 let id = value.get("playlistId").and_then(Value::as_str).unwrap_or("");
@@ -1074,22 +1074,25 @@ fn innertube_error(body: &str) -> Option<String> {
 
 /// Applies `on_renderer` to every `*Renderer` / `*ViewModel` object in the
 /// subtree.
-fn walk_renderers<F>(value: &Value, on_renderer: &mut F)
+fn walk_renderers<F>(value: Option<&Value>, on_renderer: &mut F)
 where
     F: FnMut(&str, &Value),
 {
+    let Some(value) = value else {
+        return;
+    };
     match value {
         Value::Object(map) => {
             for (key, child) in map {
                 if child.is_object() && (key.ends_with("Renderer") || key.ends_with("ViewModel")) {
                     on_renderer(key, child);
                 }
-                walk_renderers(child, on_renderer);
+                walk_renderers(Some(child), on_renderer);
             }
         }
         Value::Array(items) => {
             for item in items {
-                walk_renderers(item, on_renderer);
+                walk_renderers(Some(item), on_renderer);
             }
         }
         _ => {}

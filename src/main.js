@@ -1974,12 +1974,18 @@ async function loadSavedLists() {
     savedLists = [];
   }
   savedListField.hidden = savedLists.length === 0;
+  // The list the user picked is kept, so a refresh does not move them back
+  // to Watch Later.
+  const current = savedListSelect.value;
   savedListSelect.innerHTML = "";
   for (const list of savedLists) {
     const opt = document.createElement("option");
     opt.value = list.id;
     opt.textContent = list.label;
     savedListSelect.appendChild(opt);
+  }
+  if (savedLists.some((list) => list.id === current)) {
+    savedListSelect.value = current;
   }
 }
 
