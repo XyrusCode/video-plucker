@@ -80,6 +80,9 @@ Confirmed functionality:
 
 - Pluck a single video or a whole playlist from one URL (YouTube, X, and other
   yt-dlp sites).
+- Pluck several links at once: paste them one per line, and each is analysed
+  into a tile of a grid, with the ones that could not be read offering to be
+  fetched again.
 - Search a streaming-site catalogue, then download a movie directly or
   batch-select a series' episodes by range or checkbox.
 - Quality selection: best, 2160p, 1440p, 1080p, 720p, 480p, audio-only MP3/M4A.

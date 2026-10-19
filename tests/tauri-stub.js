@@ -120,12 +120,33 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.10.0";
+          return "4.11.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;
         case "search_content":
           return [];
+        case "fetch_metadata": {
+          // A link is read the same way whoever asks for it, so the title
+          // carries the link and one link in three has no thumbnail.
+          // The thumbnail is a 1x1 transparent gif, so the tile shows an
+          // image without the test reaching the network.
+          const url = String(args.url || "");
+          const id = url.split("v=")[1] || "unknown";
+          return {
+            kind: "video",
+            title: `Video ${id}`,
+            thumbnail:
+              id === "nothumb"
+                ? null
+                : "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+            duration: 125,
+            heights: [1080, 720],
+            entryCount: null,
+            entries: [],
+            source: "Youtube",
+          };
+        }
         case "start_pluck":
           // Recorded rather than stubbed so a test can assert on what would have been
           // handed to yt-dlp, such as an empty -P from a restored queue item.

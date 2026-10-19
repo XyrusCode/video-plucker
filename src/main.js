@@ -15,6 +15,10 @@ const metaThumb = document.getElementById("meta-thumb");
 const metaTitle = document.getElementById("meta-title");
 const metaSub = document.getElementById("meta-sub");
 const metaEntries = document.getElementById("meta-entries");
+const analysisBar = document.getElementById("analysis-bar");
+const analysisSummary = document.getElementById("analysis-summary");
+const analysisGrid = document.getElementById("analysis-grid");
+const pluckAllBtn = document.getElementById("pluck-all-btn");
 const qualitySelect = document.getElementById("quality-select");
 const cookiesSelect = document.getElementById("cookies-select");
 const destDirEl = document.getElementById("dest-dir");
@@ -87,6 +91,10 @@ let plucksStore = null; // persisted pluck records, for resume after a crash
 let queueStore = null; // parked "queue for later" items from failed downloads
 let destDir = "";
 let currentMeta = null;
+/** The tiles of the last batch analysis, one per link. */
+let batchTiles = [];
+/** How many links are analysed at the same time. */
+const BATCH_CONCURRENCY = 3;
 let nextJobId = 1;
 const jobs = new Map(); // jobId -> job state + DOM refs
 const jobQueue = []; // jobs waiting for download slots
@@ -424,29 +432,93 @@ function isPlaylistUrl(url) {
   return url.includes("list=");
 }
 
+/**
+ * The links in the field, one per line.
+ *
+ * A pasted line often holds several links, and a URL never contains a
+ * space, so whitespace is the separator.
+ */
+function inputUrls() {
+  return urlInput.value.split(/\s+/).map((u) => u.trim()).filter(Boolean);
+}
+
 urlInput.addEventListener("input", () => {
-  playlistToggle.classList.toggle("hidden", !isPlaylistUrl(urlInput.value));
+  updateInputMode();
   pluckBtn.disabled = true;
   currentMeta = null;
 });
+
+/**
+ * One link is analysed into the detail card, several into the grid.
+ *
+ * The grid plucks tile by tile and through "Pluck all", so the single
+ * Pluck button has nothing to pluck and is not shown.
+ */
+function updateInputMode() {
+  pluckBtn.classList.toggle("hidden", inputUrls().length > 1);
+  playlistToggle.classList.toggle("hidden", !isPlaylistUrl(urlInput.value));
+}
 
 function playlistMode() {
   return isPlaylistUrl(urlInput.value.trim()) && playlistCheck.checked;
 }
 
+/** The field is empty: the link has moved on to the downloads list. */
+function clearInput() {
+  urlInput.value = "";
+  updateInputMode();
+  pluckBtn.disabled = true;
+  currentMeta = null;
+  metaCard.classList.add("hidden");
+}
+
+/** The message an analysis failure shows, wherever it is shown. */
+function analyzeErrorText(err) {
+  let msg = String(err);
+  // YouTube's bot check is only escapable with browser cookies — point the
+  // user at the control that does it.
+  if (/not a bot|Sign in to confirm/i.test(msg) && !cookiesFromBrowser()) {
+    msg += "\n\nTip: set “YouTube login” to your browser to use its cookies.";
+  }
+  return msg;
+}
+
 async function analyze() {
-  const raw = urlInput.value.trim();
-  const url = cleanPlatformUrl(raw);
-  if (url !== raw) urlInput.value = url;
-  if (!url) return;
+  const urls = inputUrls();
+  if (!urls.length) return;
 
   analyzeError.classList.add("hidden");
   analyzeBtn.disabled = true;
   analyzeBtn.textContent = "Analyzing…";
   pluckBtn.disabled = true;
   try {
+    if (urls.length === 1) {
+      await analyzeOne(urls[0]);
+    } else {
+      await analyzeMany(urls);
+    }
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = "Analyze";
+  }
+}
+
+/**
+ * One link: the result is the detail card under the field.
+ *
+ * A single link is the common case, so it keeps the detail card. Several
+ * links become a grid instead, because a card per link would fill the
+ * window with cards and hide what each one is.
+ */
+async function analyzeOne(url) {
+  hideBatch();
+  currentMeta = null;
+  updateInputMode();
+  const clean = cleanPlatformUrl(url);
+  if (clean !== url) urlInput.value = clean;
+  try {
     currentMeta = await invoke("fetch_metadata", {
-      url,
+      url: clean,
       playlistMode: playlistMode(),
       cookiesFromBrowser: cookiesFromBrowser(),
     });
@@ -454,23 +526,204 @@ async function analyze() {
     pluckBtn.disabled = false;
   } catch (err) {
     metaCard.classList.add("hidden");
-    let msg = String(err);
-    // YouTube's bot check is only escapable with browser cookies — point the
-    // user at the control that does it.
-    if (/not a bot|Sign in to confirm/i.test(msg) && !cookiesFromBrowser()) {
-      msg += "\n\nTip: set “YouTube login” to your browser to use its cookies.";
-    }
-    analyzeError.textContent = msg;
+    analyzeError.textContent = analyzeErrorText(err);
     analyzeError.classList.remove("hidden");
-  } finally {
-    analyzeBtn.disabled = false;
-    analyzeBtn.textContent = "Analyze";
   }
 }
 
+/**
+ * Several links: one tile per link, analysed a few at a time.
+ *
+ * A tile is self-contained. It carries the link and what was read about
+ * it, so editing the field afterwards does not change what a tile plucks.
+ */
+async function analyzeMany(urls) {
+  currentMeta = null;
+  metaCard.classList.add("hidden");
+  updateInputMode();
+  batchTiles = urls.map((url) => createTile(url));
+  analysisGrid.innerHTML = "";
+  for (const tile of batchTiles) {
+    analysisGrid.appendChild(tile.el);
+    paintTile(tile);
+  }
+  analysisGrid.classList.remove("hidden");
+  analysisBar.classList.remove("hidden");
+  renderBatchBar();
+
+  // A few at a time: twenty yt-dlp runs at once would hammer the machine
+  // and the site.
+  const pending = batchTiles.slice();
+  const workers = Array.from(
+    { length: Math.min(BATCH_CONCURRENCY, pending.length) },
+    async () => {
+      while (pending.length) {
+        const tile = pending.shift();
+        // The batch was replaced while this link was waiting.
+        if (!batchTiles.includes(tile)) continue;
+        await analyzeTile(tile);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
+/** One tile's analysis. A failure lands on the tile, not on the window. */
+async function analyzeTile(tile) {
+  tile.state = "analysing";
+  tile.error = null;
+  tile.thumbFailed = false;
+  paintTile(tile);
+  renderBatchBar();
+  try {
+    const meta = await invoke("fetch_metadata", {
+      url: tile.url,
+      playlistMode: isPlaylistUrl(tile.url) && playlistCheck.checked,
+      cookiesFromBrowser: cookiesFromBrowser(),
+    });
+    tile.meta = meta;
+    tile.state = "ready";
+  } catch (err) {
+    tile.meta = null;
+    tile.error = analyzeErrorText(err);
+    tile.state = "failed";
+  }
+  paintTile(tile);
+  renderBatchBar();
+}
+
+function createTile(url) {
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.innerHTML = `
+    <div class="tile-thumb">
+      <img class="tile-img" alt="" />
+      <div class="tile-thumb-error hidden">
+        <span class="tile-thumb-note"></span>
+        <button class="tile-refetch">Refetch</button>
+      </div>
+    </div>
+    <div class="tile-body">
+      <span class="tile-title"></span>
+      <span class="tile-sub"></span>
+      <div class="tile-foot">
+        <button class="tile-pluck">Pluck</button>
+      </div>
+    </div>
+  `;
+  const tile = {
+    url,
+    state: "analysing",
+    meta: null,
+    error: null,
+    thumbFailed: false,
+    el,
+    img: el.querySelector(".tile-img"),
+    errorBox: el.querySelector(".tile-thumb-error"),
+    errorNote: el.querySelector(".tile-thumb-note"),
+    title: el.querySelector(".tile-title"),
+    sub: el.querySelector(".tile-sub"),
+    pluckBtn: el.querySelector(".tile-pluck"),
+    refetchBtn: el.querySelector(".tile-refetch"),
+  };
+  // A thumbnail that did not load says so on its own tile, and the refetch
+  // button is right there on it.
+  tile.img.addEventListener("error", () => {
+    tile.thumbFailed = true;
+    paintTile(tile);
+  });
+  tile.pluckBtn.addEventListener("click", () => pluckTile(tile));
+  tile.refetchBtn.addEventListener("click", () => analyzeTile(tile));
+  return tile;
+}
+
+function paintTile(tile) {
+  const meta = tile.meta;
+  tile.el.dataset.state = tile.state;
+  if (tile.state === "ready" && meta) {
+    tile.title.textContent = meta.title;
+    tile.sub.textContent = [prettySource(meta.source), fmtDuration(meta.duration)]
+      .filter(Boolean)
+      .join(" · ");
+    tile.pluckBtn.disabled = false;
+    if (meta.thumbnail && !tile.thumbFailed) {
+      tile.img.src = meta.thumbnail;
+      tile.img.classList.remove("hidden");
+      tile.errorBox.classList.add("hidden");
+    } else {
+      tile.img.classList.add("hidden");
+      tile.errorNote.textContent = tile.thumbFailed
+        ? "The thumbnail could not be fetched."
+        : "This link has no thumbnail.";
+      tile.errorBox.classList.remove("hidden");
+    }
+  } else if (tile.state === "failed") {
+    tile.title.textContent = tile.url;
+    tile.sub.textContent = "Could not be analysed";
+    tile.img.classList.add("hidden");
+    tile.errorNote.textContent = (tile.error || "Could not fetch this").replace(/\s+/g, " ");
+    tile.errorBox.classList.remove("hidden");
+    tile.pluckBtn.disabled = true;
+  } else {
+    tile.title.textContent = "Analysing…";
+    tile.sub.textContent = tile.url;
+    tile.img.classList.add("hidden");
+    tile.errorBox.classList.add("hidden");
+    tile.pluckBtn.disabled = true;
+  }
+}
+
+function renderBatchBar() {
+  const ready = batchTiles.filter((t) => t.state === "ready").length;
+  const failed = batchTiles.filter((t) => t.state === "failed").length;
+  const working = batchTiles.length - ready - failed;
+  const parts = [];
+  if (ready) parts.push(`${ready} ready`);
+  if (working) parts.push(`${working} analysing`);
+  if (failed) parts.push(`${failed} failed`);
+  analysisSummary.textContent = parts.length ? parts.join(" · ") : "Nothing analysed";
+  pluckAllBtn.disabled = ready === 0;
+  pluckAllBtn.textContent = ready > 1 ? `Pluck all (${ready})` : "Pluck all";
+}
+
+/** A tile that has been plucked leaves the grid: it is in the queue now. */
+function removeTile(tile) {
+  const at = batchTiles.indexOf(tile);
+  if (at !== -1) batchTiles.splice(at, 1);
+  tile.el.remove();
+  renderBatchBar();
+  if (!batchTiles.length) hideBatch();
+}
+
+function hideBatch() {
+  batchTiles = [];
+  analysisGrid.innerHTML = "";
+  analysisGrid.classList.add("hidden");
+  analysisBar.classList.add("hidden");
+  analysisSummary.textContent = "";
+}
+
+async function pluckTile(tile) {
+  if (!tile.meta) return;
+  await startPluck(tile.url, tile.meta);
+  removeTile(tile);
+}
+
+pluckAllBtn.addEventListener("click", async () => {
+  const ready = batchTiles.filter((t) => t.state === "ready");
+  for (const tile of ready) {
+    await startPluck(tile.url, tile.meta);
+    removeTile(tile);
+  }
+});
+
 analyzeBtn.addEventListener("click", analyze);
 urlInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") analyze();
+  // The field holds several links, so Enter is a newline. Ctrl+Enter analyses.
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    analyze();
+  }
 });
 playlistCheck.addEventListener("change", () => {
   pluckBtn.disabled = true;
@@ -1095,24 +1348,36 @@ function removeFromQueue(job) {
   job.queued = false;
 }
 
-pluckBtn.addEventListener("click", async () => {
-  if (!currentMeta) return;
-  const isPlaylist = currentMeta.kind === "playlist";
+/**
+ * Start a download for a link that has been analysed.
+ *
+ * The single card and every tile in a batch come through here, so a link
+ * behaves the same however it was read.
+ */
+async function startPluck(url, meta) {
+  const isPlaylist = meta.kind === "playlist";
   const params = {
-    url: cleanPlatformUrl(urlInput.value.trim()),
+    url,
     quality: qualitySelect.value,
     destDir,
     playlistMode: isPlaylist,
-    title: currentMeta.title,
-    itemCount: isPlaylist ? currentMeta.entryCount : 1,
+    title: meta.title,
+    itemCount: isPlaylist ? meta.entryCount : 1,
     cookiesFromBrowser: cookiesFromBrowser(),
   };
   const jobId = nextJobId++;
   await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, params, {
-    titles: isPlaylist ? currentMeta.entries : [],
+    titles: isPlaylist ? meta.entries : [],
   });
   await enqueueJob(job, { fresh: true });
+}
+
+pluckBtn.addEventListener("click", async () => {
+  if (!currentMeta) return;
+  await startPluck(cleanPlatformUrl(urlInput.value.trim()), currentMeta);
+  // The link is in the queue now, so the field is empty again.
+  clearInput();
 });
 
 // Re-create cards for plucks that were still active when the app last closed.

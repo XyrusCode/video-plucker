@@ -271,6 +271,26 @@ An empty state names what will fill the space and how to start it. "Nothing
 downloaded yet. Paste a link above and press Analyze." is correct. "No data" is
 not.
 
+### 6.7 The analysis grid
+
+The link field takes one link per line. One link is analysed into the detail
+card under the field, because one link does not need a grid. Several links are
+analysed into a grid of tiles, one per link, a few at a time.
+
+- Tiles are `16:9` and reflow by whole cells, so a thumbnail is never cropped
+  to a half tile. The thumbnail is taken out of the flow, so the tile's shape
+  comes from the ratio and not from the image.
+- A tile carries the thumbnail, the title, the site and the length. That is
+  every field the analysis returned, and nothing else.
+- A link that could not be read says so on its own tile, in the thumbnail's
+  place, in the failure red. The one action that can fix it, Refetch, is on
+  the same tile.
+- The grid is content, so it is a grid and not a table of rows. It sits under
+  the field, and the field's own controls, the format and the login, still
+  apply to every tile in it.
+- A tile that has been plucked leaves the grid: it is in the downloads table
+  now, and keeping it in the grid would say it was waiting.
+
 ---
 
 ## 7. Controls
