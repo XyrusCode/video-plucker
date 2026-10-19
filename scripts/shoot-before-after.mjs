@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "screenshots");
+const out = join(root, "docs", "ui");
 await mkdir(out, { recursive: true });
 
 const before = await mkdtemp(join(tmpdir(), "vp-before-"));
@@ -28,6 +28,7 @@ async function serve(dir) {
   return { port, stop: () => p.kill() };
 }
 
+const VIEWPORT = { width: 920, height: 680 };
 const views = [
   ["nav-download", "pluck"],
   ["nav-queue", "queue"],
@@ -41,7 +42,7 @@ for (const [label, dir] of [
 ]) {
   const { port, stop } = await serve(dir);
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  const page = await browser.newPage({ viewport: VIEWPORT });
   await page.addInitScript({ path: join(root, "tests", "tauri-stub.js") });
   await page.goto(`http://127.0.0.1:${port}/`);
   // main's frontend has no #plucks-empty and a different boot shape, so wait for the

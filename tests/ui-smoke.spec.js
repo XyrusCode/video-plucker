@@ -6,21 +6,25 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 
 /**
- * The contract checks. These fail on a design change that the DESIGN.md review
- * missed, which is the whole point: a screenshot diff catches what looks wrong,
- * a token assertion catches what drifted.
+ * The contract checks, against DESIGN.md (the canonical desktop contract).
+ * A screenshot diff catches what looks wrong; these catch what drifted.
  */
 
-// From DESIGN.md section 2 (Theme.kt). Hex, because an unregistered custom
-// property resolves to its declared token rather than to rgb().
+// DESIGN.md §2. Hex, because an unregistered custom property resolves to its
+// declared token rather than to rgb().
 const CONTRACT = {
-  "--accent": "#ff2d55", // #FF2D55
-  "--bg": "#0d0d0f", // #0D0D0F
-  "--panel": "#1c1c1e", // #1C1C1E
-  "--panel-2": "#2c2c2e", // #2C2C2E
-  "--text": "#f5f5f7", // #F5F5F7
-  "--ok": "#30d158", // #30D158
-  "--warn": "#ff9f0a", // #FF9F0A
+  "--bg": "#0f1115",
+  "--surface": "#14171c",
+  "--surface-hover": "#191d23",
+  "--overlay": "#1b2027",
+  "--line": "#242a32",
+  "--text": "#e6e9ef",
+  "--text-2": "#9aa4b2",
+  "--accent": "#ff2d55",
+  "--accent-fill": "#e01e45",
+  "--ok": "#3fb950",
+  "--warn": "#e3a008",
+  "--error": "#ff7b72",
 };
 
 test.beforeEach(async ({ page }) => {
@@ -33,50 +37,29 @@ test.beforeEach(async ({ page }) => {
 
   await page.addInitScript({ path: join(here, "tauri-stub.js") });
   await page.goto("/");
-  // The app boots asynchronously (three stores, then renders).
-  await expect(page.locator("#plucks .job-card")).toHaveCount(1);
+  // The app boots asynchronously (stores, then render).
+  await expect(page.locator("#plucks tr.row")).toHaveCount(1);
 });
 
 test.afterEach(async ({ page }) => {
   expect(page.__errors, "page logged errors during the test").toEqual([]);
 });
 
-test("design tokens match DESIGN.md", async ({ page }) => {
-  const actual = await page.evaluate(() => {
+test("design tokens match DESIGN.md §2", async ({ page }) => {
+  const actual = await page.evaluate((names) => {
     const styles = getComputedStyle(document.documentElement);
     const out = {};
-    for (const name of Object.keys({
-      "--accent": 1,
-      "--bg": 1,
-      "--panel": 1,
-      "--panel-2": 1,
-      "--text": 1,
-      "--ok": 1,
-      "--warn": 1,
-    })) {
+    for (const name of names) {
       out[name] = styles.getPropertyValue(name).trim().toLowerCase();
     }
     return out;
-  });
+  }, Object.keys(CONTRACT));
 
   expect(actual).toEqual(CONTRACT);
 });
 
-test("the accent is the phone's red, not the old blue", async ({ page }) => {
-  // The desktop app was #0a84ff throughout. One assertion names that directly so a
-  // regression says what regressed.
-  const accent = await page.evaluate(() =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent")
-      .trim()
-      .toLowerCase(),
-  );
-  expect(accent).not.toContain("0a84ff");
-});
-
-test("the accent token actually reaches a painted element", async ({ page }) => {
-  // A token can be correct in :root and still be unused, which is how the pink logo
-  // gradient survived as the app's only brand colour for a whole release.
+test("the accent token reaches a painted element", async ({ page }) => {
+  // A token can be correct in :root and still be unused.
   const painted = await page.evaluate(() => {
     const probe = document.createElement("span");
     probe.style.color = "var(--accent)";
@@ -88,9 +71,22 @@ test("the accent token actually reaches a painted element", async ({ page }) => 
   expect(painted).toBe("rgb(255, 45, 85)");
 });
 
+test("white text sits only on the AA-passing fill, not the brand red", async ({ page }) => {
+  // White on --accent is 3.64:1. The primary button must use --accent-fill.
+  const bg = await page.evaluate(
+    () => getComputedStyle(document.getElementById("analyze-btn")).backgroundColor,
+  );
+  // The analyze button is a secondary control; check a primary one instead.
+  const primary = await page.evaluate(
+    () => getComputedStyle(document.getElementById("pluck-btn")).backgroundColor,
+  );
+  expect(primary).toBe("rgb(224, 30, 69)");
+  expect(bg).not.toBe("rgb(255, 45, 85)");
+});
+
 test("every cached getElementById in main.js resolves", async ({ page }) => {
-  // main.js caches ~40 elements at module scope and dereferences them immediately.
-  // A renamed id is a null dereference on boot, which this catches before a user does.
+  // main.js caches its elements at module scope and dereferences them on boot.
+  // A renamed id is a null dereference that the user meets first.
   const source = await readFile(join(here, "..", "src", "main.js"), "utf8");
   const ids = [...source.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]);
 
@@ -102,16 +98,15 @@ test("every cached getElementById in main.js resolves", async ({ page }) => {
   expect(missing, "ids referenced by main.js but absent from index.html").toEqual([]);
 });
 
-test("dead classes are gone", async ({ page }) => {
-  // .glossy-btn shipped on 20 elements with no CSS rule behind it after the 4.7.0
-  // rewrite. Harmless today, a trap the next person copies.
-  const glossy = await page.evaluate(
-    () => document.querySelectorAll(".glossy-btn").length,
-  );
-  expect(glossy).toBe(0);
+test("the rail has four destinations and exactly one is active", async ({ page }) => {
+  // DESIGN.md §5: a rail, not pill chips.
+  await expect(page.locator(".rail .rail-item")).toHaveCount(4);
+  await expect(page.locator(".rail .rail-item.active")).toHaveCount(1);
+  await expect(page.locator(".rail .rail-item.active")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".pill-chip, .pill-row")).toHaveCount(0);
 });
 
-test("each tab shows its view and moves the active pill", async ({ page }) => {
+test("each rail item shows its view and moves the active marker", async ({ page }) => {
   const tabs = [
     ["nav-download", "view-download"],
     ["nav-queue", "view-queue"],
@@ -123,14 +118,13 @@ test("each tab shows its view and moves the active pill", async ({ page }) => {
     await page.locator(`#${navId}`).click();
     await expect(page.locator(`#${viewId}`)).toBeVisible();
     await expect(page.locator(`#${navId}`)).toHaveClass(/active/);
-    // Exactly one pill is active at a time.
-    await expect(page.locator(".pill-chip.active")).toHaveCount(1);
+    await expect(page.locator(".rail-item.active")).toHaveCount(1);
   }
 });
 
-test("downloads live under Pluck and nowhere else", async ({ page }) => {
-  // Mobile shows downloads inside the Pluck tab. They used to sit outside the view
-  // system, so they rendered on the Search and Settings tabs too.
+test("downloads are a table with a header, and live under Pluck", async ({ page }) => {
+  // DESIGN.md §6.2: tables, with a sticky head.
+  await expect(page.locator("#downloads-table thead th")).not.toHaveCount(0);
   const insidePluck = await page.evaluate(
     () => !!document.querySelector("#view-download #plucks"),
   );
@@ -145,42 +139,126 @@ test("downloads live under Pluck and nowhere else", async ({ page }) => {
   }
 });
 
-test("every screen has a title and a subtitle", async ({ page }) => {
-  const views = [
-    "view-download",
-    "view-queue",
-    "view-search",
-    "view-settings",
-  ];
-  for (const id of views) {
-    const texts = await page.evaluate((viewId) => {
-      const view = document.getElementById(viewId);
-      return {
-        title: view.querySelector(".screen-title")?.textContent?.trim() ?? "",
-        sub: view.querySelector(".screen-sub")?.textContent?.trim() ?? "",
-      };
-    }, id);
-    expect(texts.title, `#${id} has no screen title`).not.toBe("");
-    expect(texts.sub, `#${id} has no screen subtitle`).not.toBe("");
+test("body rows stay within the §4 row height bound", async ({ page }) => {
+  const heights = await page.evaluate(() =>
+    [...document.querySelectorAll("#plucks tr.row")].map((r) => r.getBoundingClientRect().height),
+  );
+  for (const h of heights) expect(h).toBeLessThanOrEqual(36);
+});
+
+test("status bar shows engine state and the running version", async ({ page }) => {
+  // DESIGN.md §5: the status bar is always present and reports the version.
+  await expect(page.locator(".statusbar")).toBeVisible();
+  await expect(page.locator("#status-engine")).not.toHaveText("");
+  await expect(page.locator("#status-version")).toHaveText("v4.9.0");
+});
+
+test("no text is rendered uppercase (§3)", async ({ page }) => {
+  const count = await page.evaluate(() => {
+    let n = 0;
+    for (const el of document.querySelectorAll("body *")) {
+      if (getComputedStyle(el).textTransform === "uppercase") n++;
+    }
+    return n;
+  });
+  expect(count).toBe(0);
+});
+
+test("no button uses a gradient (§10)", async ({ page }) => {
+  const count = await page.evaluate(() => {
+    let n = 0;
+    for (const el of document.querySelectorAll("button")) {
+      if (getComputedStyle(el).backgroundImage !== "none") n++;
+    }
+    return n;
+  });
+  expect(count).toBe(0);
+});
+
+test("every screen has a title", async ({ page }) => {
+  for (const id of ["view-download", "view-queue", "view-search", "view-settings"]) {
+    const title = await page.evaluate(
+      (viewId) => document.getElementById(viewId).querySelector(".view-title")?.textContent?.trim() ?? "",
+      id,
+    );
+    expect(title, `#${id} has no view title`).not.toBe("");
   }
 });
 
-test("a job row does not overflow its card", async ({ page }) => {
-  // The controls used to be bare siblings in a space-between row with no wrap, which
-  // overflowed once more than three were showing at once.
+test("settings are two panes, and the section list switches them", async ({ page }) => {
+  await page.locator("#nav-settings").click();
+  await expect(page.locator(".settings-nav .settings-nav-item")).toHaveCount(5);
+  await expect(page.locator("#pane-downloads")).toBeVisible();
+
+  await page.locator('.settings-nav-item[data-pane="pane-cookies"]').click();
+  await expect(page.locator("#pane-cookies")).toBeVisible();
+  await expect(page.locator("#pane-downloads")).toBeHidden();
+});
+
+// The chrome depends on the platform the webview reports. CI runs on Linux, so
+// each platform's expectations are pinned with its own user agent.
+const WINDOWS_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+const NATIVE_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+test.describe("on Windows", () => {
+  test.use({ userAgent: WINDOWS_UA });
+
+  test("the window controls call the frameless verbs", async ({ page }) => {
+    await expect(page.locator("#window-controls")).toBeVisible();
+    await page.locator("#win-minimize").click();
+    await page.locator("#win-close").click();
+
+    const log = await page.evaluate(() => window.__invokeLog.map((c) => c.cmd));
+    expect(log).toContain("window.minimize");
+    // Close must hide, not destroy: hide-to-tray is the app's behaviour.
+    expect(log).toContain("window.hide");
+  });
+
+  test("the title bar is a Tauri drag region", async ({ page }) => {
+    // Tauri reads data-tauri-drag-region; app-region is an Electron property and does nothing here.
+    await expect(page.locator(".titlebar")).toHaveAttribute("data-tauri-drag-region", "");
+    await expect(page.locator("body")).toHaveAttribute("data-chrome", "windows");
+  });
+});
+
+test.describe("on macOS and Linux", () => {
+  test.use({ userAgent: NATIVE_UA });
+
+  test("native decorations stay on: no custom title bar, no window controls", async ({ page }) => {
+    // A second title bar under the OS one would be two title bars. The brand bar is removed.
+    await expect(page.locator("body")).toHaveAttribute("data-chrome", "native");
+    await expect(page.locator(".titlebar")).toBeHidden();
+    await expect(page.locator("#window-controls")).toBeHidden();
+    await expect(page.locator(".titlebar")).not.toHaveAttribute("data-tauri-drag-region", "");
+  });
+});
+
+test("the row menu survives a re-render of the action cell", async ({ page }) => {
+  // The hidden control buttons live outside the cell that renderRowActions clears;
+  // a menu item must still reach them after the row has been re-rendered.
+  const row = page.locator("#plucks tr.row").first();
+  await row.locator(".row-action").first().click();
+  await expect(page.locator(".overflow-menu")).toHaveCount(0);
+  await row.locator('button[aria-label^="More actions"]').click();
+  await expect(page.locator(".overflow-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".overflow-menu")).toHaveCount(0);
+});
+
+test("a job row does not overflow its table", async ({ page }) => {
   const overflow = await page.evaluate(() => {
-    const head = document.querySelector("#plucks .job-head");
-    return head.scrollWidth - head.clientWidth;
+    const table = document.getElementById("downloads-table");
+    return table.scrollWidth - table.clientWidth;
   });
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("export sends the arguments the Rust command declares", async ({ page }) => {
-  // Tauri rejects a call missing one of the command's parameters at the boundary, with
-  // an error that reads like a filesystem failure. export_dump takes settings and
-  // parked as well as a path; sending only the path fails after the file dialog closes,
-  // which is the worst possible moment to find out.
+  // export_dump takes settings and parked as well as a path; a call that omits
+  // one fails after the file dialog closes, which is the worst moment to learn.
   await page.locator("#nav-settings").click();
+  await page.locator('.settings-nav-item[data-pane="pane-backup"]').click();
   await page.locator("#export-dump-btn").click();
   await expect(page.locator("#dump-status")).toBeVisible();
 
@@ -194,10 +272,8 @@ test("export sends the arguments the Rust command declares", async ({ page }) =>
 });
 
 test("import persists what the command returned", async ({ page }) => {
-  // The settings store is a frontend store, so the command cannot write it. If the
-  // returned prefs are dropped on the floor the import reports success and restores
-  // nothing, which is the worst failure mode this feature has.
   await page.locator("#nav-settings").click();
+  await page.locator('.settings-nav-item[data-pane="pane-backup"]').click();
   await page.locator("#import-dump-btn").click();
   await expect(page.locator("#dump-status")).toContainText("1 setting");
 
@@ -218,15 +294,15 @@ test("import persists what the command returned", async ({ page }) => {
 test("a restored queue item downloads into the current folder, not an empty one", async ({
   page,
 }) => {
-  // restored_queue_items emits destDir: "" because the dump format has nowhere to put one.
-  // Passed through untouched it becomes `yt-dlp -P ""`, which resolves to whatever
-  // directory the app happened to launch in.
+  // restored_queue_items emits destDir: "". Passed through it becomes
+  // `yt-dlp -P ""`, which resolves to whatever directory the app launched in.
   await page.locator("#nav-settings").click();
+  await page.locator('.settings-nav-item[data-pane="pane-backup"]').click();
   await page.locator("#import-dump-btn").click();
   await expect(page.locator("#dump-status")).toContainText("1 setting");
 
   await page.locator("#nav-queue").click();
-  await page.locator(".queue-start").first().click();
+  await page.locator("#queue-list .row-action").first().click();
 
   const started = await page.evaluate(() => {
     const call = window.__invokeLog.find((c) => c.cmd === "start_pluck");
@@ -250,7 +326,7 @@ test("screenshots", async ({ page }, testInfo) => {
     await page.locator(`#${navId}`).click();
     await page.waitForTimeout(120);
     await testInfo.attach(`${name}.png`, {
-      body: await page.screenshot({ fullPage: true }),
+      body: await page.screenshot(),
       contentType: "image/png",
     });
   }
