@@ -195,22 +195,43 @@ test("settings are two panes, and the section list switches them", async ({ page
   await expect(page.locator("#pane-downloads")).toBeHidden();
 });
 
-test("the Windows window controls call the frameless verbs", async ({ page }) => {
-  // The stub reports the Windows user agent by default, so the controls show.
-  await expect(page.locator("#window-controls")).toBeVisible();
-  await page.locator("#win-minimize").click();
-  await page.locator("#win-close").click();
+// The chrome depends on the platform the webview reports. CI runs on Linux, so
+// each platform's expectations are pinned with its own user agent.
+const WINDOWS_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+const NATIVE_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
-  const log = await page.evaluate(() => window.__invokeLog.map((c) => c.cmd));
-  expect(log).toContain("window.minimize");
-  // Close must hide, not destroy: hide-to-tray is the app's behaviour.
-  expect(log).toContain("window.hide");
+test.describe("on Windows", () => {
+  test.use({ userAgent: WINDOWS_UA });
+
+  test("the window controls call the frameless verbs", async ({ page }) => {
+    await expect(page.locator("#window-controls")).toBeVisible();
+    await page.locator("#win-minimize").click();
+    await page.locator("#win-close").click();
+
+    const log = await page.evaluate(() => window.__invokeLog.map((c) => c.cmd));
+    expect(log).toContain("window.minimize");
+    // Close must hide, not destroy: hide-to-tray is the app's behaviour.
+    expect(log).toContain("window.hide");
+  });
+
+  test("the title bar is a Tauri drag region", async ({ page }) => {
+    // Tauri reads data-tauri-drag-region; app-region is an Electron property and does nothing here.
+    await expect(page.locator(".titlebar")).toHaveAttribute("data-tauri-drag-region", "");
+    await expect(page.locator("body")).toHaveAttribute("data-chrome", "windows");
+  });
 });
 
-test("the Windows title bar is a Tauri drag region, and only there", async ({ page }) => {
-  // Tauri reads data-tauri-drag-region; app-region is an Electron property and does nothing here.
-  await expect(page.locator(".titlebar")).toHaveAttribute("data-tauri-drag-region", "");
-  await expect(page.locator("body")).toHaveAttribute("data-chrome", "windows");
+test.describe("on macOS and Linux", () => {
+  test.use({ userAgent: NATIVE_UA });
+
+  test("native decorations stay on: no custom title bar, no window controls", async ({ page }) => {
+    // A second title bar under the OS one would be two title bars. The brand bar is removed.
+    await expect(page.locator("body")).toHaveAttribute("data-chrome", "native");
+    await expect(page.locator(".titlebar")).toBeHidden();
+    await expect(page.locator("#window-controls")).toBeHidden();
+    await expect(page.locator(".titlebar")).not.toHaveAttribute("data-tauri-drag-region", "");
+  });
 });
 
 test("the row menu survives a re-render of the action cell", async ({ page }) => {
