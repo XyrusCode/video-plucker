@@ -4,6 +4,7 @@ mod engine;
 mod errors;
 mod extractors;
 mod pluck;
+mod retry;
 mod search_commands;
 mod sidecar;
 mod tray;

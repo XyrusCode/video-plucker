@@ -540,6 +540,7 @@ const ICON_PATHS = {
   clock: '<circle cx="8" cy="8" r="5.3"/><path d="M8 5v3.3l2 1.4" stroke-linecap="round"/>',
   flag: '<path d="M4 14V2.5M4 3h7.5l-1.5 2.5L11.5 8H4" stroke-linejoin="round"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" stroke-linejoin="round"/>',
+  retry: '<path d="M12.9 8a4.9 4.9 0 1 1-1.45-3.47" stroke-linecap="round"/><path d="M13.2 2.4v3h-3" stroke-linecap="round" stroke-linejoin="round"/>',
   more: '<circle cx="3.5" cy="8" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor"/>',
 };
 
@@ -694,6 +695,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   job.cancelBtn = makeHiddenButton("job-cancel");
   job.pauseBtn = makeHiddenButton("job-pause");
   job.resumeBtn = makeHiddenButton("job-resume");
+  job.retryBtn = makeHiddenButton("job-retry");
   job.queueBtn = makeHiddenButton("job-queue");
   job.reportBtn = makeHiddenButton("job-report");
   job.openBtn = makeHiddenButton("job-open");
@@ -732,6 +734,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   });
 
   job.resumeBtn.addEventListener("click", () => resumeJob(job));
+  job.retryBtn.addEventListener("click", () => retryJob(job));
   job.queueBtn.addEventListener("click", () => queueForLater(job));
   job.reportBtn.addEventListener("click", () => reportIssue(job));
   job.dismissBtn.addEventListener("click", async () => {
@@ -798,6 +801,7 @@ function renderRowActions(job) {
 function primaryActionFor(job) {
   const shown = (btn) => !btn.classList.contains("hidden");
   if (shown(job.resumeBtn)) return { label: "Resume", icon: "play", run: () => resumeJob(job) };
+  if (shown(job.retryBtn)) return { label: "Retry", icon: "retry", run: () => job.retryBtn.click() };
   if (shown(job.pauseBtn)) return { label: "Pause", icon: "pause", run: () => job.pauseBtn.click() };
   if (shown(job.cancelBtn)) return { label: "Cancel", icon: "close", run: () => job.cancelBtn.click() };
   if (shown(job.openBtn)) {
@@ -828,6 +832,7 @@ function menuActionsFor(job) {
   };
   add(job.pauseBtn, "Pause", "pause");
   add(job.resumeBtn, "Resume", "play");
+  add(job.retryBtn, "Retry", "retry");
   add(job.cancelBtn, "Cancel", "close");
   add(job.queueBtn, "Park for later", "clock");
   add(job.openBtn, "Reveal in folder", "folder");
@@ -973,6 +978,7 @@ async function beginPluck(job, { fresh }) {
   job.pauseBtn.classList.remove("hidden");
   job.pauseBtn.disabled = false;
   job.resumeBtn.classList.add("hidden");
+  job.retryBtn.classList.add("hidden");
   job.queueBtn.classList.add("hidden");
   job.reportBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
@@ -1030,6 +1036,26 @@ async function resumeJob(job) {
   } else {
     await enqueueJob(job, { fresh: false });
   }
+}
+
+/**
+ * Run a failed download again.
+ *
+ * A retry is a resume with a clean error state. The yt-dlp archive is kept,
+ * so items that already finished are not downloaded a second time, and a
+ * cookies.txt imported since the failure is picked up by the backend.
+ */
+async function retryJob(job) {
+  job.rawErrors = [];
+  job.friendlyError = null;
+  job.failureKind = null;
+  job.overallFill.style.width = "0%";
+  job.overallPct.textContent = "0%";
+  job.sizeEl.textContent = "";
+  // Hidden before the job is queued, so a second press cannot queue it twice.
+  job.retryBtn.classList.add("hidden");
+  renderRowActions(job);
+  await resumeJob(job);
 }
 
 // Add a job to the single-active FIFO queue and start it if the slot is free.
@@ -1142,6 +1168,7 @@ async function restoreInterruptedPlucks() {
       job.statusTextEl.textContent = "Failed";
       job.statusEl.className = "cell-status fail";
       showFailMessage(job, job.friendlyError || "Download failed.");
+      job.retryBtn.classList.remove("hidden");
       job.queueBtn.classList.remove("hidden");
       job.reportBtn.classList.remove("hidden");
       job.dismissBtn.classList.remove("hidden");
@@ -1184,13 +1211,15 @@ function finishJob(job, { ok, cancelled, error }) {
     removeRecord(job.id);
   } else {
     // Failed: plain-language verdict only (raw lines are kept for reports),
-    // and "Park for later" replaces retry as the primary action.
+    // and Retry is the primary action. Parking it for later is still one
+    // click away in the overflow menu.
     if (error) appendError(job, error);
     job.statusTextEl.textContent = "Failed";
     job.statusTextEl.title = job.friendlyError || "";
     job.statusEl.className = "cell-status fail";
     showFailMessage(job, job.friendlyError || "Download failed.");
     if (job.lastFile) job.openBtn.classList.remove("hidden");
+    job.retryBtn.classList.remove("hidden");
     job.queueBtn.classList.remove("hidden");
     job.reportBtn.classList.remove("hidden");
     job.dismissBtn.classList.remove("hidden");
@@ -1233,9 +1262,10 @@ function appendError(job, message, friendly = null, kind = null) {
 
 function rankFailureKind(kind) {
   switch (kind) {
-    case "login_required": return 3;
-    case "unsupported_content": return 2;
-    case "stale_engine": return 1;
+    case "login_required": return 4;
+    case "unsupported_content": return 3;
+    case "stale_engine": return 2;
+    case "network": return 1;
     default: return 0;
   }
 }

@@ -120,7 +120,7 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.9.0";
+          return "4.10.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;

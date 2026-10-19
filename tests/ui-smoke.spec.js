@@ -151,7 +151,7 @@ test("status bar shows engine state and the running version", async ({ page }) =
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.9.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.10.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {
@@ -245,6 +245,23 @@ test("the row menu survives a re-render of the action cell", async ({ page }) =>
   await expect(page.locator(".overflow-menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".overflow-menu")).toHaveCount(0);
+});
+
+test("a failed download offers a retry that starts it again", async ({ page }) => {
+  // Retry is the row's primary action (DESIGN.md §6.2): one visible action,
+  // the rest in the overflow menu.
+  const row = page.locator("#plucks tr.row", { hasText: "A Failed Download" });
+  const retry = row.locator('button[aria-label="Retry"]');
+  await expect(retry).toBeVisible();
+
+  await retry.click();
+
+  const started = await page.evaluate(() =>
+    window.__invokeLog.filter((c) => c.cmd === "start_pluck"),
+  );
+  expect(started.length, "the retry did not start the download again").toBeGreaterThan(0);
+  // The same job id, so the yt-dlp archive still skips what already finished.
+  expect(started[0].args.jobId).toBe(10);
 });
 
 test("clearing a failed download takes its failure notice with it", async ({ page }) => {
