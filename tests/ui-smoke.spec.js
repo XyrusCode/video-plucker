@@ -37,8 +37,9 @@ test.beforeEach(async ({ page }) => {
 
   await page.addInitScript({ path: join(here, "tauri-stub.js") });
   await page.goto("/");
-  // The app boots asynchronously (stores, then render).
-  await expect(page.locator("#plucks tr.row")).toHaveCount(1);
+  // The app boots asynchronously (stores, then render). The stub seeds one
+  // interrupted download and one failed download, so there are two rows.
+  await expect(page.locator("#plucks tr.row")).toHaveCount(2);
 });
 
 test.afterEach(async ({ page }) => {
@@ -237,13 +238,30 @@ test.describe("on macOS and Linux", () => {
 test("the row menu survives a re-render of the action cell", async ({ page }) => {
   // The hidden control buttons live outside the cell that renderRowActions clears;
   // a menu item must still reach them after the row has been re-rendered.
-  const row = page.locator("#plucks tr.row").first();
+  const row = page.locator("#plucks tr.row", { hasText: "An Interrupted Download" });
   await row.locator(".row-action").first().click();
   await expect(page.locator(".overflow-menu")).toHaveCount(0);
   await row.locator('button[aria-label^="More actions"]').click();
   await expect(page.locator(".overflow-menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".overflow-menu")).toHaveCount(0);
+});
+
+test("clearing a failed download takes its failure notice with it", async ({ page }) => {
+  // The failure notice is a sibling row of the download row. Clearing the
+  // download without clearing the notice left "Download failed." on screen
+  // with nothing behind it.
+  await expect(page.locator("#plucks tr[data-fail-for]")).toHaveCount(1);
+  await expect(page.locator("#plucks .notice.error")).toContainText(
+    "YouTube requires a logged-in account",
+  );
+
+  await page.locator("#clear-history-btn").click();
+
+  await expect(page.locator("#plucks tr[data-fail-for]")).toHaveCount(0);
+  await expect(page.locator("#plucks .notice.error")).toHaveCount(0);
+  // The interrupted download is not finished, so it stays.
+  await expect(page.locator("#plucks tr.row")).toHaveCount(1);
 });
 
 test("a job row does not overflow its table", async ({ page }) => {
