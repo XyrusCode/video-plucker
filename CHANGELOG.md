@@ -4,6 +4,16 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.2] - 2026-11-13
+
+### Fixed
+- **Restoring a phone backup now brings its browser logins with it.** The Android app keeps a
+  login made in its in-app browser as a `cookies_<site>` value, and only exports *imported*
+  cookie files, so a backup from a phone whose X or TikTok login came from the browser restored
+  a desktop with no login for those sites — the Saved tab reported "not signed in" even though
+  the phone worked. Import now turns those values into the `cookies.txt` files the desktop reads,
+  for X, TikTok, YouTube and VK. A cookie file the backup does carry is left as it is.
+
 ## [4.15.1] - 2026-11-13
 
 ### Fixed

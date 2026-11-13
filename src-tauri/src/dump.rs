@@ -25,8 +25,15 @@
 //! - A dump with no `queue` key does **not** clear the parked list here. Android replaces its
 //!   queue on import because it owns the whole list; this merges instead, so picking a file
 //!   can never silently delete downloads the user still has.
+//!
+//! A third one is pinned by [`synthesized_cookie_files`]: Android only exports *imported*
+//! cookie files under `cookieFiles`. A login made in the in-app browser is kept as one
+//! `cookies_<platform>` string in prefs, so a phone whose X and TikTok logins came from the
+//! browser exports no `x.txt` or `tiktok.txt` at all. Reading only `cookieFiles` therefore
+//! restored a desktop with no login for those sites, which is why the strings are converted
+//! into the Netscape files the desktop reads.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -332,6 +339,89 @@ pub fn restored_cookie_files(dump: &Value) -> BTreeMap<String, String> {
     out
 }
 
+/// The desktop file name and cookie domain for an Android `cookies_<key>` pref.
+fn cookie_pref_target(platform: &str) -> Option<(&'static str, &'static str)> {
+    match platform {
+        "twitter" => Some(("x.txt", "x.com")),
+        "tiktok" => Some(("tiktok.txt", "tiktok.com")),
+        "youtube" => Some(("youtube.txt", "youtube.com")),
+        "vk" => Some(("vk.txt", "vk.com")),
+        _ => None,
+    }
+}
+
+/// Cookie files a dump does not carry but implies, built from Android's
+/// `cookies_<platform>` prefs.
+///
+/// Android keeps a browser login as one `cookies_<platform>` string and only
+/// exports *imported* files under `cookieFiles`. A phone whose X or TikTok
+/// login came from the in-app browser therefore carries no `x.txt`, and a
+/// reader that only looked at `cookieFiles` restored a desktop with no login
+/// for that site. Each string is written out as the Netscape file the desktop
+/// reads, in the shape `CookieManager` saw it: one session cookie per name for
+/// the site's own domain.
+///
+/// A file the dump does carry wins: Android applies the imported file after
+/// the browser string, so the file is the newer truth and is left alone.
+pub fn synthesized_cookie_files(dump: &Value) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(prefs) = dump.get("prefs").and_then(|p| p.as_object()) else {
+        return out;
+    };
+    let shipped: BTreeSet<String> = restored_cookie_files(dump).into_keys().collect();
+    for (key, value) in prefs {
+        let Some(platform) = key.strip_prefix("cookies_") else {
+            continue;
+        };
+        let Some((name, domain)) = cookie_pref_target(platform) else {
+            continue;
+        };
+        if shipped.contains(name) {
+            continue;
+        }
+        let Some(raw) = value.as_str() else {
+            continue;
+        };
+        let body = netscape_from_cookie_string(raw, domain);
+        if !body.is_empty() {
+            out.insert(name.to_string(), body);
+        }
+    }
+    out
+}
+
+/// One `Cookie` header string (`a=1; b=2`) as a Netscape cookie file.
+///
+/// Names are deduplicated because `CookieManager` can repeat one, and a value
+/// carrying a tab or newline is skipped rather than allowed to break the file
+/// the parser reads line by line. Expiry is 0 (session) and the path is `/`,
+/// matching what the browser session held.
+fn netscape_from_cookie_string(raw: &str, domain: &str) -> String {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut lines = String::new();
+    for part in raw.split(';') {
+        let Some((name, value)) = part.split_once('=') else {
+            continue;
+        };
+        let name = name.trim();
+        let value = value.trim();
+        if name.is_empty()
+            || name.contains(['\t', '\r', '\n'])
+            || value.contains(['\t', '\r', '\n'])
+        {
+            continue;
+        }
+        if !seen.insert(name) {
+            continue;
+        }
+        lines.push_str(&format!(".{domain}\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n"));
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("# Netscape HTTP Cookie File\n{lines}")
+}
+
 pub fn app_version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
@@ -380,7 +470,8 @@ pub fn import_dump(app: AppHandle, path: String) -> Result<ImportResult, String>
 
     let cookies_dir = crate::pluck::app_cookies_dir(&app);
     let cookie_files = restored_cookie_files(&dump);
-    for (name, contents) in &cookie_files {
+    let synthesized = synthesized_cookie_files(&dump);
+    for (name, contents) in cookie_files.iter().chain(synthesized.iter()) {
         std::fs::write(cookies_dir.join(name), contents)
             .map_err(|e| format!("Could not write cookie file {name}: {e}"))?;
     }
@@ -393,7 +484,7 @@ pub fn import_dump(app: AppHandle, path: String) -> Result<ImportResult, String>
     ledger::save(&app, &merged)?;
     let counts = DumpCounts {
         prefs_keys: prefs.len(),
-        cookie_files: cookie_files.len(),
+        cookie_files: cookie_files.len() + synthesized.len(),
         queue_items: queue.len(),
         skipped_queue_items: 0,
         ledger_entries: incoming.len(),
@@ -637,6 +728,56 @@ mod tests {
         let body = "# Netscape HTTP Cookie File\n.x.com\tTRUE\t/\tTRUE\t1801\tauth_token\tv\n";
         let dump = json!({ "cookieFiles": { "x.txt": body } });
         assert_eq!(restored_cookie_files(&dump)["x.txt"], body);
+    }
+
+    #[test]
+    fn turns_a_webview_login_into_the_file_the_desktop_reads() {
+        // The phone only exports *imported* files. A login made in the in-app
+        // browser lives in `cookies_twitter`, so without this a restore
+        // produced a desktop with no X login at all.
+        let dump = json!({
+            "prefs": {
+                "cookies_twitter": "guest_id=v1; twid=u%3D42; auth_token=secret; ct0=csrf; __cuid=a; __cuid=b"
+            }
+        });
+        let files = synthesized_cookie_files(&dump);
+        let x = files.get("x.txt").expect("x.txt is synthesized");
+        assert!(x.starts_with("# Netscape HTTP Cookie File\n"));
+        assert!(x.contains(".x.com\tTRUE\t/\tTRUE\t0\tauth_token\tsecret\n"));
+        assert!(x.contains("\tct0\tcsrf\n"));
+        assert!(x.contains("\ttwid\tu%3D42\n"));
+        // A name CookieManager repeated appears once.
+        assert_eq!(x.matches("\t__cuid\t").count(), 1);
+        assert!(files.get("tiktok.txt").is_none(), "no TikTok login in this dump");
+    }
+
+    #[test]
+    fn a_cookie_file_the_dump_carries_wins_over_the_browser_string() {
+        // Android applies the imported file after the browser string, so the
+        // file is the newer truth and must not be replaced by the pref.
+        let dump = json!({
+            "cookieFiles": { "x.txt": "# Netscape HTTP Cookie File\n.x.com\tTRUE\t/\tTRUE\t0\tauth_token\tfrom-file\n" },
+            "prefs": { "cookies_twitter": "auth_token=from-browser; ct0=csrf" }
+        });
+        let files = synthesized_cookie_files(&dump);
+        assert!(files.is_empty(), "the shipped file is left alone");
+    }
+
+    #[test]
+    fn unknown_or_broken_cookie_prefs_are_ignored() {
+        let dump = json!({
+            "prefs": {
+                "cookies_mycustomsite": "a=1",
+                "cookies_tiktok": "no-equals-sign; ok=1",
+                "cookies_vk": 42
+            }
+        });
+        let files = synthesized_cookie_files(&dump);
+        assert_eq!(files.len(), 1, "only the readable string becomes a file");
+        let tiktok = &files["tiktok.txt"];
+        assert!(tiktok.contains("\tok\t1\n"));
+        assert!(!tiktok.contains("no-equals-sign"));
+        assert!(files.get("vk.txt").is_none(), "a non-string pref is skipped");
     }
 
     #[test]
