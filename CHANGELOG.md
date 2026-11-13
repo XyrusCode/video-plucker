@@ -4,6 +4,16 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.1] - 2026-11-13
+
+### Fixed
+- **Saved lists from X no longer fail with HTTP 431.** The Saved tab sent every cookie in the
+  imported `cookies.txt` to the site, and a `cookies.txt` exported from a phone browser is often a
+  whole-browser dump: its hundreds of unrelated cookies pushed the request header over X's limit.
+  Each site's read is now scoped to that site's own cookies, the way a browser and yt-dlp already
+  scope them, so a whole-browser export works instead of being rejected. The imported file itself
+  is not changed.
+
 ## [4.15.0] - 2026-10-19
 
 ### Added

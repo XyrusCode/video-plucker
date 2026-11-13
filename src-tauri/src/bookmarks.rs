@@ -69,6 +69,53 @@ impl Site {
         }
     }
 
+    /// The registrable domains whose cookies this site's readers send.
+    ///
+    /// Only these belong on the wire: an imported file is often a
+    /// whole-browser export, and sending the rest is both useless and, for X,
+    /// an HTTP 431. YouTube includes google.com because SAPISID, the cookie
+    /// that signs INNERTUBE calls, is often scoped to `.google.com` rather
+    /// than `.youtube.com`.
+    fn cookie_domains(self) -> &'static [&'static str] {
+        match self {
+            Site::YouTube => &["youtube.com", "google.com"],
+            Site::TikTok => &["tiktok.com"],
+            Site::Twitter => &["x.com", "twitter.com"],
+            Site::Vk => &["vk.com", "vk.ru", "vk-portal.net", "vkvideo.ru"],
+        }
+    }
+
+    /// The paths this site's readers call, used to honour a cookie's own path.
+    fn request_paths(self) -> &'static [&'static str] {
+        match self {
+            Site::YouTube => &["/youtubei/v1/browse"],
+            Site::TikTok => &[
+                "/passport/web/account/info",
+                "/api/user/collect/item_list",
+                "/api/favorite/item_list",
+            ],
+            Site::Twitter => &["/i/api/graphql/"],
+            Site::Vk => &["/fave"],
+        }
+    }
+
+    /// A cookie belongs to this site when its domain is one of the site's own
+    /// domains or a subdomain of one.
+    fn accepts_domain(self, domain: &str) -> bool {
+        self.cookie_domains()
+            .iter()
+            .any(|owned| domain == *owned || domain.ends_with(&format!(".{owned}")))
+    }
+
+    /// A cookie may be sent when its path is a prefix of a path this site
+    /// calls, which is the rule a browser applies.
+    fn accepts_path(self, path: &str) -> bool {
+        let path = if path.is_empty() { "/" } else { path };
+        self.request_paths()
+            .iter()
+            .any(|request| request.starts_with(path))
+    }
+
     pub fn from_key(key: &str) -> Option<Site> {
         match key.trim().to_lowercase().as_str() {
             "youtube" => Some(Site::YouTube),
@@ -123,6 +170,26 @@ pub struct SavedSnapshot {
 /// The cookies of one site, read from the `cookies.txt` the user imported.
 type Cookies = HashMap<String, String>;
 
+/// One cookie line from a Netscape `cookies.txt`, kept with the fields that
+/// decide whether it may be sent to a site at all.
+///
+/// A `cookies.txt` exported from a phone browser is not one site's cookies: a
+/// whole-browser export carries every domain the browser ever saw. X's edge
+/// answers a request that carries all of them with HTTP 431 (Request Header
+/// Fields Too Large). Browsers and yt-dlp scope each cookie to the host it
+/// belongs to before sending it; so does this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StoredCookie {
+    /// Cookie domain, lowercase, leading dot removed.
+    domain: String,
+    /// Cookie path, `/` when the file left it empty.
+    path: String,
+    /// Unix expiry in seconds; `0` means a session cookie.
+    expires: i64,
+    name: String,
+    value: String,
+}
+
 const DESKTOP_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/120.0.0.0 Safari/537.36";
@@ -167,21 +234,27 @@ fn client() -> &'static reqwest::Client {
 }
 
 /// Read the cookies of a site from the profile the user imported for it.
+///
+/// The file is filtered to that site's cookies (see [`StoredCookie`]): an
+/// imported profile can be a whole-browser export, and a request that carried
+/// every cookie in one was answered by X with HTTP 431. What stays on disk is
+/// untouched — only the request is scoped.
 fn site_cookies(app: &AppHandle, site: Site) -> Cookies {
     let dir = pluck::app_cookies_dir(app);
     let Some(path) = settings_cookie_file(&dir, site.cookie_probe()) else {
         return HashMap::new();
     };
-    parse_netscape_cookies(Path::new(&path))
+    cookies_for(&parse_netscape_cookies(Path::new(&path)), site)
 }
 
-/// Parse a Netscape `cookies.txt` into a name/value map.
+/// Parse a Netscape `cookies.txt` into records, keeping the domain, path and
+/// expiry that decide whether a cookie may be sent.
 ///
 /// HttpOnly cookies are written with a `#HttpOnly_` prefix, which looks
 /// like a comment but is not one: those are the session cookies the sites
 /// actually need, so they are read and the prefix is dropped.
-fn parse_netscape_cookies(path: &Path) -> Cookies {
-    let mut out = HashMap::new();
+fn parse_netscape_cookies(path: &Path) -> Vec<StoredCookie> {
+    let mut out = Vec::new();
     let Ok(text) = std::fs::read_to_string(path) else {
         return out;
     };
@@ -196,14 +269,64 @@ fn parse_netscape_cookies(path: &Path) -> Cookies {
             continue;
         }
         let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() >= 7 {
-            let name = fields[5].trim();
-            if !name.is_empty() {
-                out.insert(name.to_string(), fields[6].trim().to_string());
-            }
+        if fields.len() < 7 {
+            continue;
         }
+        let name = fields[5].trim();
+        if name.is_empty() {
+            continue;
+        }
+        let domain = fields[0].trim().trim_start_matches('.').to_lowercase();
+        if domain.is_empty() {
+            continue;
+        }
+        let path = match fields[2].trim() {
+            "" => "/",
+            path => path,
+        };
+        out.push(StoredCookie {
+            domain,
+            path: path.to_string(),
+            expires: fields[4].trim().parse::<i64>().unwrap_or(0),
+            name: name.to_string(),
+            value: fields[6].trim().to_string(),
+        });
     }
     out
+}
+
+/// The `Cookie` header for one site: its own domains only, unexpired, on a
+/// path it calls, one value per name.
+///
+/// One value per name matters because a whole-browser export can hold the same
+/// cookie for several domains (`x.com`, `.twitter.com`; `google.com`,
+/// `youtube.com`). The most specific domain wins, which is the one a browser
+/// would have sent last.
+fn cookies_for(stored: &[StoredCookie], site: Site) -> Cookies {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let mut chosen: HashMap<String, &StoredCookie> = HashMap::new();
+    for cookie in stored {
+        if cookie.expires != 0 && cookie.expires < now {
+            continue;
+        }
+        if !site.accepts_domain(&cookie.domain) || !site.accepts_path(&cookie.path) {
+            continue;
+        }
+        let keep = chosen
+            .get(&cookie.name)
+            .map(|current| cookie.domain.len() > current.domain.len())
+            .unwrap_or(true);
+        if keep {
+            chosen.insert(cookie.name.clone(), cookie);
+        }
+    }
+    chosen
+        .into_iter()
+        .map(|(name, cookie)| (name, cookie.value.clone()))
+        .collect()
 }
 
 fn cookie_header(cookies: &Cookies) -> String {
@@ -1163,13 +1286,112 @@ mod tests {
              #HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\t__Secure-3PAPISID\thidden456\n",
         )
         .unwrap();
-        let cookies = parse_netscape_cookies(&path);
+        let cookies = cookies_for(&parse_netscape_cookies(&path), Site::YouTube);
         // The HttpOnly cookie is the one that matters, and it is read.
         assert_eq!(cookies.get("SAPISID").map(String::as_str), Some("value123"));
         assert_eq!(
             cookies.get("__Secure-3PAPISID").map(String::as_str),
             Some("hidden456")
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_whole_browser_dump_is_scoped_to_the_site_being_read() {
+        // The shape of a real export from a phone browser: the cookies the
+        // site needs, a second domain for the same session, and hundreds of
+        // ad/tracker cookies that belong to nobody's API call. X answers the
+        // unscoped request with HTTP 431, which is what this guards.
+        let dir = std::env::temp_dir().join(format!("vp-scope-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.txt");
+        std::fs::write(
+            &path,
+            "# Netscape HTTP Cookie File\n\
+             .x.com\tTRUE\t/\tTRUE\t0\tauth_token\tx-secret\n\
+             .twitter.com\tTRUE\t/\tTRUE\t0\tct0\ttw-secret\n\
+             .pubmatic.com\tTRUE\t/\tTRUE\t0\tpub\tad\n\
+             .vk.ru\tTRUE\t/\tTRUE\t0\tremixsid\tvk-secret\n\
+             .google.com\tTRUE\t/\tTRUE\t0\tSAPISID\tgoogle-secret\n\
+             .youtube.com\tTRUE\t/\tTRUE\t0\tPREF\tyt-pref\n",
+        )
+        .unwrap();
+        let stored = parse_netscape_cookies(&path);
+
+        let x = cookies_for(&stored, Site::Twitter);
+        assert_eq!(x.get("auth_token").map(String::as_str), Some("x-secret"));
+        assert_eq!(x.get("ct0").map(String::as_str), Some("tw-secret"));
+        for foreign in ["pub", "remixsid", "SAPISID", "PREF"] {
+            assert!(!x.contains_key(foreign), "{foreign} must not go to X");
+        }
+
+        // SAPISID lives on .google.com in most exports; YouTube must keep it.
+        let yt = cookies_for(&stored, Site::YouTube);
+        assert_eq!(yt.get("SAPISID").map(String::as_str), Some("google-secret"));
+        assert_eq!(yt.get("PREF").map(String::as_str), Some("yt-pref"));
+        assert!(!yt.contains_key("auth_token"), "X cookies must not go to YouTube");
+
+        let vk = cookies_for(&stored, Site::Vk);
+        assert_eq!(vk.get("remixsid").map(String::as_str), Some("vk-secret"));
+        assert_eq!(vk.len(), 1, "only the VK cookie survives");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_expired_or_wrong_path_cookie_is_not_sent() {
+        let dir = std::env::temp_dir().join(format!("vp-expiry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.txt");
+        std::fs::write(
+            &path,
+            "# Netscape HTTP Cookie File\n\
+             .x.com\tTRUE\t/\tTRUE\t946684800\tstale\texpired-in-2000\n\
+             .x.com\tTRUE\t/\tTRUE\t4102444800\tfresh\tvalid-until-2100\n\
+             .x.com\tTRUE\t/\tTRUE\t0\tsession\tsession-value\n\
+             .x.com\tTRUE\t/settings\tTRUE\t0\tscoped\tsettings-only\n\
+             .x.com\tTRUE\t/i/api\tTRUE\t0\tapi\tscoped-to-api\n",
+        )
+        .unwrap();
+        let cookies = cookies_for(&parse_netscape_cookies(&path), Site::Twitter);
+
+        assert!(!cookies.contains_key("stale"), "expired cookies are dropped");
+        assert_eq!(cookies.get("fresh").map(String::as_str), Some("valid-until-2100"));
+        assert_eq!(cookies.get("session").map(String::as_str), Some("session-value"));
+        assert!(
+            !cookies.contains_key("scoped"),
+            "a /settings cookie is not sent to the GraphQL path"
+        );
+        assert_eq!(
+            cookies.get("api").map(String::as_str),
+            Some("scoped-to-api"),
+            "a /i/api cookie is sent to /i/api/graphql/"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_most_specific_domain_wins_for_a_repeated_name() {
+        let dir = std::env::temp_dir().join(format!("vp-specific-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.txt");
+        std::fs::write(
+            &path,
+            "# Netscape HTTP Cookie File\n\
+             .twitter.com\tTRUE\t/\tTRUE\t0\tauth_token\tparent-domain\n\
+             x.com\tTRUE\t/\tTRUE\t0\tauth_token\thost-domain\n",
+        )
+        .unwrap();
+        let cookies = cookies_for(&parse_netscape_cookies(&path), Site::Twitter);
+
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(
+            cookies.get("auth_token").map(String::as_str),
+            Some("host-domain"),
+            "the more specific domain is kept"
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
