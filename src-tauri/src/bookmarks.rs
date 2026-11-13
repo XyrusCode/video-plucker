@@ -99,6 +99,31 @@ impl Site {
         }
     }
 
+    /// The host this site's readers actually call. Used to prefer a cookie
+    /// scoped to that exact host over one scoped to a sibling domain.
+    fn request_host(self) -> &'static str {
+        match self {
+            Site::YouTube => "www.youtube.com",
+            Site::TikTok => "www.tiktok.com",
+            Site::Twitter => "x.com",
+            Site::Vk => "m.vk.com",
+        }
+    }
+
+    /// How well a cookie's domain fits a request to [`Site::request_host`]:
+    /// the request host itself, a parent of it, or another domain this site
+    /// also serves. Higher is a better fit.
+    fn domain_fit(self, domain: &str) -> u8 {
+        let host = self.request_host();
+        if domain == host {
+            3
+        } else if host.ends_with(&format!(".{domain}")) {
+            2
+        } else {
+            1
+        }
+    }
+
     /// A cookie belongs to this site when its domain is one of the site's own
     /// domains or a subdomain of one.
     fn accepts_domain(self, domain: &str) -> bool {
@@ -300,8 +325,9 @@ fn parse_netscape_cookies(path: &Path) -> Vec<StoredCookie> {
 ///
 /// One value per name matters because a whole-browser export can hold the same
 /// cookie for several domains (`x.com`, `.twitter.com`; `google.com`,
-/// `youtube.com`). The most specific domain wins, which is the one a browser
-/// would have sent last.
+/// `youtube.com`). The cookie scoped to the host being called wins, then the
+/// one scoped to a parent of it, then the more specific of the rest — the
+/// order a browser would have sent them in.
 fn cookies_for(stored: &[StoredCookie], site: Site) -> Cookies {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -317,7 +343,10 @@ fn cookies_for(stored: &[StoredCookie], site: Site) -> Cookies {
         }
         let keep = chosen
             .get(&cookie.name)
-            .map(|current| cookie.domain.len() > current.domain.len())
+            .map(|current| {
+                (site.domain_fit(&cookie.domain), cookie.domain.len())
+                    > (site.domain_fit(&current.domain), current.domain.len())
+            })
             .unwrap_or(true);
         if keep {
             chosen.insert(cookie.name.clone(), cookie);
