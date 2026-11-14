@@ -16,7 +16,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use url::Url;
 
 pub struct PluckJob {
@@ -105,11 +105,51 @@ fn consume_deep_link(state: State<PendingDeepLink>) -> Option<DeepLinkPayload> {
 }
 
 fn show_main_window(app: &AppHandle) {
+    ensure_main_window(app);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// Creates the main window if it does not exist.
+///
+/// The window declared in `tauri.conf.json` is only built at boot. Once it has
+/// been destroyed by the tray teardown ([`hide_to_tray`]) it is rebuilt here
+/// with the same geometry, and the frontend reattaches to the jobs that kept
+/// running in the backend.
+fn ensure_main_window(app: &AppHandle) {
+    if app.get_webview_window("main").is_some() {
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("Video Plucker")
+        .inner_size(920.0, 680.0)
+        .min_inner_size(700.0, 500.0)
+        .build();
+}
+
+/// Hides the window to the tray and, if it is still hidden after a short
+/// grace period, destroys it. The webview is the app's heaviest idle cost —
+/// a hidden window kept compositing forever — so teardown is the point: the
+/// backend keeps every download running, and the window is rebuilt on demand
+/// (tray click, deep link). The grace period keeps a quick un-hide cheap, and
+/// doubles as the window in which the frontend flushes its stores after the
+/// `pluck://ui-hiding` event.
+fn hide_to_tray(window: &tauri::Window) {
+    let _ = window.hide();
+    // The frontend flushes its stores while the webview is still alive.
+    let _ = window.emit("pluck://ui-hiding", ());
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if let Some(w) = app.get_webview_window("main") {
+            if !w.is_visible().unwrap_or(true) {
+                let _ = w.destroy();
+            }
+        }
+    });
 }
 
 fn kill_all_jobs(app: &AppHandle) {
@@ -149,13 +189,13 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             // X button hides to tray; downloads keep running
             WindowEvent::CloseRequested { api, .. } => {
-                let _ = window.hide();
+                hide_to_tray(window);
                 api.prevent_close();
             }
             // minimize also goes to tray
             WindowEvent::Resized(_) => {
                 if window.is_minimized().unwrap_or(false) {
-                    let _ = window.hide();
+                    hide_to_tray(window);
                 }
             }
             _ => {}
@@ -181,6 +221,7 @@ pub fn run() {
             search_commands::get_series_detail,
             search_commands::resolve_streams,
             search_commands::start_stream_pluck,
+            commands::list_active_jobs,
             consume_deep_link
         ])
         .build(tauri::generate_context!())

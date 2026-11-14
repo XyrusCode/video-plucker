@@ -147,6 +147,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | 1.2.5     | 4.5.1   | Same protocol; failure UX overhaul (Queue-for-later, issue reporting, self-healing yt-dlp) |
 | 1.2.5     | 4.14.0  | Same protocol; the desktop adds a Saved tab, a batch link field and a retry |
 | 1.2.5     | 4.15.0  | Same protocol; download ledger, duplicate check on analyze, dump v3 |
+| 1.2.5     | 4.16.0  | Same protocol; unlimited parallel downloads, default-quality setting, tray teardown |
 
 ## Key Files
 
@@ -161,4 +162,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.15.0 (download ledger and duplicate check; the protocol is unchanged)*
+*Last updated: v4.16.0 (unlimited parallel downloads, default-quality setting, tray teardown; the protocol is unchanged)*

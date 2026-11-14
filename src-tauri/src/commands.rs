@@ -672,6 +672,17 @@ pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Stri
     pluck::kill_tree(job.pid);
     Ok(())
 }
+
+/// The ids of the plucks currently running in the backend.
+///
+/// When the main window is torn down to the tray and later rebuilt, the
+/// frontend reloads from its stores and needs to know which of its "active"
+/// records still have a live download behind them, so it can reattach to
+/// those instead of offering a Resume that would double-start the job.
+#[tauri::command]
+pub fn list_active_jobs(state: State<'_, PluckState>) -> Vec<u64> {
+    state.0.lock().unwrap().keys().copied().collect()
+}
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

@@ -4,6 +4,31 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.16.0] - 2026-11-15
+
+### Added
+- **Unlimited parallel downloads.** Parallel mode's *Max concurrent downloads* setting now
+  offers *Unlimited* — every queued download starts immediately instead of waiting for a
+  slot. Queue mode still downloads one at a time.
+- **Copy original link.** Every download row (active, failed, parked queue) and every tile
+  on the Saved tab now has a *Copy original link* action that puts the link the download
+  came from back on the clipboard. Streaming-site episodes are the exception: they have no
+  single URL to copy.
+- **A default-quality setting.** Settings → Downloads gains a *Default quality* select that
+  shares the same setting as the Pluck tab's Format select, so the two can never disagree.
+  The default is now **480p**: on update every install is switched to 480p once, and any
+  choice made after that is kept.
+
+### Changed
+- **Faster downloads.** yt-dlp now transfers up to 16 fragments of a video at once (was 4),
+  which saturates the connection on hosts that throttle per connection, and stalled
+  connections time out after 30 s instead of hanging the job.
+- **A hidden window costs nothing.** Closing to the tray or minimizing now tears the
+  window down after a few seconds instead of keeping the whole WebKit webview compositing
+  forever. Downloads keep running in the backend; reopening (tray, deep link) rebuilds the
+  window and reattaches to the live downloads, and progress events are not emitted while
+  there is no window to show them.
+
 ## [4.15.2] - 2026-11-13
 
 ### Fixed

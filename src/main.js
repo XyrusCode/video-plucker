@@ -105,9 +105,14 @@ const jobs = new Map(); // jobId -> job state + DOM refs
 const jobQueue = []; // jobs waiting for download slots
 let activeJobs = new Set(); // currently running jobs (for parallel mode)
 
-// Get max concurrent downloads based on settings
+// Get max concurrent downloads based on settings.
+// A maxConcurrentDownloads of 0 (the "Unlimited" option) means every queued
+// job starts immediately; JSON stores cannot hold Infinity, so 0 is the
+// sentinel.
 function getMaxConcurrentDownloads() {
-  return appSettings.downloadMode === "parallel" ? appSettings.maxConcurrentDownloads : 1;
+  if (appSettings.downloadMode !== "parallel") return 1;
+  const max = Number(appSettings.maxConcurrentDownloads);
+  return max === 0 ? Infinity : max || 3;
 }
 
 // search state
@@ -158,10 +163,10 @@ const TERMS_KEY = "video-plucker-terms-accepted";
 // Settings structure with defaults
 const DEFAULT_SETTINGS = {
   destDir: null, // will be set to downloadDir() if not provided
-  quality: "best",
+  quality: "480", // 480p is the default; the user can change it on Pluck or in Settings
   cookiesBrowser: "none",
   downloadMode: "queue", // "queue" or "parallel"
-  maxConcurrentDownloads: 3,
+  maxConcurrentDownloads: 3, // 0 = unlimited
   autoUpdate: true,
   nextJobId: 1
 };
@@ -176,7 +181,15 @@ async function initSettings() {
   
   // Load all settings with defaults
   await loadSettings();
-  
+
+  // v4.16.0 moved the default quality to 480p. One-time migration: an install
+  // that still carries the old "best" default is switched over, a choice the
+  // user makes from this release on is kept.
+  if (appSettings.quality480Migrated !== true) {
+    await saveSetting("quality", "480");
+    await saveSetting("quality480Migrated", true);
+  }
+
   // Apply loaded settings to UI
   destDir = appSettings.destDir || (await downloadDir());
   if (appSettings.destDir !== destDir) {
@@ -243,6 +256,10 @@ browseBtn.addEventListener("click", async () => {
 
 qualitySelect.addEventListener("change", async () => {
   await saveSetting("quality", qualitySelect.value);
+  // Keep the Settings pane's select in sync (declared further down; the
+  // handler only ever runs after the whole script has loaded).
+  const settingsSelect = document.getElementById("settings-quality-select");
+  if (settingsSelect) settingsSelect.value = qualitySelect.value;
 });
 
 cookiesSelect.addEventListener("change", async () => {
@@ -821,6 +838,7 @@ const ICON_PATHS = {
   flag: '<path d="M4 14V2.5M4 3h7.5l-1.5 2.5L11.5 8H4" stroke-linejoin="round"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" stroke-linejoin="round"/>',
   retry: '<path d="M12.9 8a4.9 4.9 0 1 1-1.45-3.47" stroke-linecap="round"/><path d="M13.2 2.4v3h-3" stroke-linecap="round" stroke-linejoin="round"/>',
+  link: '<path d="M6.67 8.67a3.33 3.33 0 0 0 5.03.36l2-2a3.33 3.33 0 0 0-4.71-4.71l-1.15 1.14" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.33 7.33a3.33 3.33 0 0 0-5.03-.36l-2 2a3.33 3.33 0 0 0 4.71 4.71l1.14-1.14" stroke-linecap="round" stroke-linejoin="round"/>',
   more: '<circle cx="3.5" cy="8" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor"/>',
 };
 
@@ -830,6 +848,18 @@ const ICONS = Object.fromEntries(
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">${body}</svg>`,
   ]),
 );
+
+/** Brief visual confirmation that the link is on the clipboard. */
+function flashCopied(btn) {
+  btn.classList.add("copied");
+  const prev = btn.title;
+  btn.title = "Copied!";
+  clearTimeout(flashCopied._t);
+  flashCopied._t = setTimeout(() => {
+    btn.classList.remove("copied");
+    btn.title = prev || "Copy original link";
+  }, 1200);
+}
 
 /* ---------- status bar (DESIGN.md §5) ---------- */
 
@@ -980,6 +1010,7 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   job.reportBtn = makeHiddenButton("job-report");
   job.openBtn = makeHiddenButton("job-open");
   job.dismissBtn = makeHiddenButton("job-dismiss");
+  job.copyLinkBtn = makeHiddenButton("job-copy-link");
 
   job.expandBtn = card.querySelector(".cell-chevron");
   job.itemsEl = document.createElement("tbody");
@@ -1030,6 +1061,16 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   job.openBtn.addEventListener("click", () => {
     if (job.lastFile) revealItemInDir(job.lastFile);
   });
+  job.copyLinkBtn.addEventListener("click", async () => {
+    if (!job.params.url) return;
+    try {
+      await navigator.clipboard.writeText(job.params.url);
+      flashCopied(job.copyLinkBtn);
+    } catch {}
+  });
+  // The original link is always worth copying, whatever state the job is
+  // in — only a streaming-site job has no single URL, and it stays hidden.
+  if (job.params.url) job.copyLinkBtn.classList.remove("hidden");
 
   renderRowActions(job);
 
@@ -1116,6 +1157,7 @@ function menuActionsFor(job) {
   add(job.cancelBtn, "Cancel", "close");
   add(job.queueBtn, "Park for later", "clock");
   add(job.openBtn, "Reveal in folder", "folder");
+  add(job.copyLinkBtn, "Copy original link", "link");
   add(job.reportBtn, "Report a problem", "flag");
   add(job.dismissBtn, "Remove from list", "trash", true);
   return out;
@@ -1353,19 +1395,20 @@ async function enqueueJob(job, { fresh }) {
 
 function drainQueue() {
   const maxConcurrent = getMaxConcurrentDownloads();
-  
-  // Start as many jobs as we can within our limit
+
+  // Start as many jobs as we can within our limit. The set holds job ids,
+  // so jobs reattached after a webview teardown count against the limit too.
   while (activeJobs.size < maxConcurrent && jobQueue.length > 0) {
     const entry = jobQueue.shift();
     if (!entry) break;
-    
-    activeJobs.add(entry.job);
+
+    activeJobs.add(entry.job.id);
     beginPluck(entry.job, { fresh: entry.fresh });
   }
 }
 
 function removeFromActiveJobs(job) {
-  activeJobs.delete(job);
+  activeJobs.delete(job.id);
   drainQueue(); // Try to start more jobs
 }
 
@@ -1475,12 +1518,21 @@ function recordLedger(job) {
 }
 
 // Re-create cards for plucks that were still active when the app last closed.
+// When the window was torn down to the tray (not a crash), the downloads kept
+// running in the backend, so those records reattach to the live job instead
+// of offering a Resume that would start the same download twice.
 async function restoreInterruptedPlucks() {
   let entries;
   try {
     entries = await plucksStore.entries();
   } catch {
     return;
+  }
+  let running;
+  try {
+    running = new Set(await invoke("list_active_jobs"));
+  } catch {
+    running = new Set();
   }
   for (const [, rec] of entries) {
     if (!rec) continue;
@@ -1531,6 +1583,19 @@ async function restoreInterruptedPlucks() {
       job.queueBtn.classList.remove("hidden");
       job.reportBtn.classList.remove("hidden");
       job.dismissBtn.classList.remove("hidden");
+    } else if (running.has(rec.jobId)) {
+      // Still running in the backend after a webview teardown: reattach.
+      // The slot counts against the parallel limit, so new jobs queue
+      // behind it, and the next pluck event refreshes the card from live.
+      activeJobs.add(rec.jobId);
+      job.pauseBtn.classList.remove("hidden");
+      job.cancelBtn.classList.remove("hidden");
+      job.pauseBtn.disabled = false;
+      job.cancelBtn.disabled = false;
+      job.dismissBtn.classList.remove("hidden");
+      job.statusTextEl.textContent = "Plucking";
+      job.statusEl.className = "cell-status";
+      if (job.isPlaylist) buildItemRows(job);
     } else {
       job.resumeBtn.classList.remove("hidden");
       job.dismissBtn.classList.remove("hidden");
@@ -1754,6 +1819,13 @@ listen("pluck://cookies", ({ payload }) => {
   job.statusTextEl.textContent = `Using cookies: ${payload.file}`;
 });
 
+// The window is being hidden to the tray and will be torn down in a moment.
+// Stores autosave as they change, but a save in flight at teardown would be
+// lost, so they are flushed explicitly while the webview is still alive.
+listen("pluck://ui-hiding", async () => {
+  await Promise.allSettled([store.save?.(), plucksStore.save?.(), queueStore.save?.()]);
+});
+
 /* ---------- queue for later ---------- */
 //
 // Failed downloads can be parked here instead of retrying immediately: the
@@ -1849,7 +1921,23 @@ queueSub.textContent = count
       await renderQueue();
     });
 
-    actions.append(start, remove);
+    if (item.params.url) {
+      const copy = document.createElement("button");
+      copy.className = "row-action";
+      copy.type = "button";
+      copy.setAttribute("aria-label", "Copy original link");
+      copy.title = "Copy original link";
+      copy.innerHTML = ICONS.link;
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(item.params.url);
+          flashCopied(copy);
+        } catch {}
+      });
+      actions.append(start, copy, remove);
+    } else {
+      actions.append(start, remove);
+    }
     queueList.appendChild(tr);
   }
   updateStatusBar();
@@ -2133,6 +2221,7 @@ function createSavedTile(item) {
       <span class="tile-title"></span>
       <span class="tile-sub"></span>
       <div class="tile-foot">
+        <button class="tile-copy" type="button" aria-label="Copy original link" title="Copy original link"></button>
         <button class="tile-pluck">Pluck</button>
       </div>
     </div>
@@ -2151,6 +2240,14 @@ function createSavedTile(item) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const copy = el.querySelector(".tile-copy");
+  copy.innerHTML = ICONS.link;
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(item.url);
+      flashCopied(copy);
+    } catch {}
+  });
   const pluck = el.querySelector(".tile-pluck");
   pluck.addEventListener("click", async () => {
     pluck.disabled = true;
@@ -2707,6 +2804,7 @@ initSettings()
 const downloadModeSelect = document.getElementById("download-mode-select");
 const maxConcurrentSelect = document.getElementById("max-concurrent-select");
 const concurrentDownloadsRow = document.getElementById("concurrent-downloads-row");
+const settingsQualitySelect = document.getElementById("settings-quality-select");
 const settingsDestDir = document.getElementById("settings-dest-dir");
 const settingsBrowseBtn = document.getElementById("settings-browse-btn");
 const appVersionSpan = document.getElementById("app-version");
@@ -2715,6 +2813,7 @@ async function initSettingsPage() {
   // Load current settings into UI
   downloadModeSelect.value = appSettings.downloadMode;
   maxConcurrentSelect.value = appSettings.maxConcurrentDownloads.toString();
+  settingsQualitySelect.value = appSettings.quality;
   
   // Update concurrent downloads visibility
   updateConcurrentDownloadsVisibility();
@@ -2741,6 +2840,13 @@ async function initSettingsPage() {
 
   maxConcurrentSelect.addEventListener("change", async () => {
     await saveSetting("maxConcurrentDownloads", parseInt(maxConcurrentSelect.value));
+  });
+
+  // One quality, two controls: either select writes the same setting and
+  // mirrors the value into the other, so they can never disagree.
+  settingsQualitySelect.addEventListener("change", async () => {
+    qualitySelect.value = settingsQualitySelect.value;
+    await saveSetting("quality", settingsQualitySelect.value);
   });
 
   settingsBrowseBtn.addEventListener("click", async () => {

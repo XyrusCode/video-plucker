@@ -172,8 +172,16 @@ pub fn build_args(
         "10",
         "--fragment-retries",
         "10",
+        // yt-dlp transfers one connection per fragment by default, which
+        // leaves most lines nowhere near the line's actual capacity. 16
+        // concurrent fragments is what saturates a connection on the hosts
+        // that throttle per connection; a single-stream source ignores it.
         "--concurrent-fragments",
-        "4",
+        "16",
+        // A stalled connection must time out and retry instead of hanging a
+        // job forever at 0 bytes/s.
+        "--socket-timeout",
+        "30",
         "--no-mtime",
         "--no-warnings",
         "--newline",
@@ -264,6 +272,19 @@ pub fn build_args(
     Ok(args)
 }
 
+/// True when the main window exists and is visible.
+///
+/// Progress ticks are the app's highest-frequency events. While the window
+/// sits hidden in the tray — or has been torn down entirely — there is
+/// nothing to render them, so they are not emitted at all. Every other
+/// pluck event is correctness-relevant and stays unconditional; the webview
+/// rebuild reattaches to live jobs from its stores and the backend state.
+fn window_listening(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false)
+}
+
 /// Rate limiter for progress events so the webview isn't flooded
 /// (yt-dlp emits many progress lines per second per fragment).
 pub struct Throttle {
@@ -344,18 +365,20 @@ pub fn handle_line(
         if !finished && !throttle.ready() {
             return LineOutcome::Nothing;
         }
-        let _ = app.emit(
-            "pluck://progress",
-            ProgressPayload {
-                job_id,
-                item_index: index(p[0]),
-                downloaded_bytes: downloaded,
-                total_bytes: total,
-                percent,
-                speed: num(p[4]),
-                eta: num(p[5]),
-            },
-        );
+        if window_listening(app) {
+            let _ = app.emit(
+                "pluck://progress",
+                ProgressPayload {
+                    job_id,
+                    item_index: index(p[0]),
+                    downloaded_bytes: downloaded,
+                    total_bytes: total,
+                    percent,
+                    speed: num(p[4]),
+                    eta: num(p[5]),
+                },
+            );
+        }
         return LineOutcome::Progress {
             item: index(p[0]),
             fraction: percent.map(|pc| pc / 100.0),
@@ -440,18 +463,20 @@ pub fn handle_stream_line(
         if !finished && !throttle.ready() {
             return (None, None);
         }
-        let _ = app.emit(
-            "pluck://progress",
-            ProgressPayload {
-                job_id,
-                item_index: Some(item_index),
-                downloaded_bytes: downloaded,
-                total_bytes: total,
-                percent,
-                speed: num(p[4]),
-                eta: num(p[5]),
-            },
-        );
+        if window_listening(app) {
+            let _ = app.emit(
+                "pluck://progress",
+                ProgressPayload {
+                    job_id,
+                    item_index: Some(item_index),
+                    downloaded_bytes: downloaded,
+                    total_bytes: total,
+                    percent,
+                    speed: num(p[4]),
+                    eta: num(p[5]),
+                },
+            );
+        }
     } else if let Some(rest) = line.strip_prefix("DONE|") {
         let p: Vec<&str> = rest.splitn(2, '|').collect();
         if p.len() < 2 {
