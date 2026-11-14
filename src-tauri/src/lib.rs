@@ -137,7 +137,7 @@ fn ensure_main_window(app: &AppHandle) {
 /// (tray click, deep link). The grace period keeps a quick un-hide cheap, and
 /// doubles as the window in which the frontend flushes its stores after the
 /// `pluck://ui-hiding` event.
-fn hide_to_tray(window: &tauri::WebviewWindow) {
+fn hide_to_tray(window: &tauri::Window) {
     let _ = window.hide();
     // The frontend flushes its stores while the webview is still alive.
     let _ = window.emit("pluck://ui-hiding", ());
