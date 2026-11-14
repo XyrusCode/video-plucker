@@ -349,6 +349,27 @@
                 </div>
               </div>
 
+              <div class="setting-row" id="settings-quality-row">
+                <div class="setting-text">
+                  <span class="setting-title">Default quality</span>
+                  <p class="setting-desc">
+                    Used for every download unless you pick another one here or on the Pluck tab.
+                  </p>
+                </div>
+                <div class="setting-control">
+                  <select id="settings-quality-select">
+                    <option value="best">Best available</option>
+                    <option value="2160">2160p (4K)</option>
+                    <option value="1440">1440p</option>
+                    <option value="1080">1080p</option>
+                    <option value="720">720p</option>
+                    <option value="480">480p</option>
+                    <option value="mp3">Audio only — MP3</option>
+                    <option value="m4a">Audio only — M4A</option>
+                  </select>
+                </div>
+              </div>
+
               <div class="setting-row" id="concurrent-downloads-row">
                 <div class="setting-text">
                   <span class="setting-title">Max concurrent downloads</span>
@@ -356,6 +377,7 @@
                 </div>
                 <div class="setting-control">
                   <select id="max-concurrent-select">
+                    <option value="0">Unlimited</option>
                     <option value="2">2 downloads</option>
                     <option value="3">3 downloads</option>
                     <option value="4">4 downloads</option>

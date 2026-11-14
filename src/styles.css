@@ -857,6 +857,24 @@ tr.item-row td:first-child {
   margin-top: var(--space-2);
 }
 
+/* Copy-original-link icon button on a saved tile (DESIGN.md §6.8). */
+.tile-copy {
+  width: var(--control-h);
+  padding: 0;
+  color: var(--text-2);
+}
+
+.tile-copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* A copy button flashes green for a moment after writing the clipboard. */
+.row-action.copied,
+.tile-copy.copied {
+  color: var(--ok);
+}
+
 /* ---------- the saved view (DESIGN.md §6.8) ---------- */
 
 .saved-bar {
