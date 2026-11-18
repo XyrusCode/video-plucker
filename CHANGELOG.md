@@ -4,6 +4,49 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.17.0] - <PII type="DATE" id="13"/>
+
+### Added
+- **A History tab.** A new rail destination logs every download this install ever attempted,
+  finished or failed, with title, format, date and verdict. Each row has *Download this again*
+  (re-queues the stored link, no duplicate prompt), *Copy original link* and *Remove from history*,
+  plus a *Clear history* button in the header. Failed entries are kept too, so a link that never
+  landed is not lost. History is recorded by the backend when yt-dlp moves the finished file into
+  place, so it works however the download was started; it is local to this machine and is not part
+  of dumps and backups.
+- **Per-source subfolders.** Downloads are now sorted into one folder per site inside the
+  destination folder (`YouTube/`, `X/`, `TikTok/`, `Reddit/`, `Instagram/`, …, `Other/` for
+  anything unrecognised). Playlist subfolders still nest inside those.
+- **Download all on Saved and Queue.** The Saved view gains a *Download all* button (it downloads
+  whatever the site filter shows), and the Queue view's *Start all* is now labelled *Download all*.
+  Both, plus the batch grid's *Pluck all*, ask once for the whole batch when some of the links are
+  already in the history instead of asking per link, and both work from the duplicate ledger even
+  when the file is no longer on disk.
+- **Clear temp files.** Settings → Downloads gains a *Clear temp files* button. All partial and
+  merge-intermediate files now live in a single `.incoming` folder inside the destination folder
+  instead of next to the finished files, and that folder is what gets cleaned.
+- **A duplicate prompt everywhere.** The already-downloaded warning now guards every way of starting
+  a download — Saved tiles, parked queue items, deep links and plain analyze — instead of only the
+  Pluck card; re-downloading from History is explicit and skips the prompt. The bulk starts check
+  the whole batch once instead of skipping silently.
+
+### Fixed
+- **Unlimited parallel downloads now behave as unlimited.** The pause path leaked its slot in the
+  parallel scheduler (a paused job held a slot forever), which could starve the queue. A paused job
+  now releases its slot; Resume re-queues through the FIFO. A cancel or pause that lands between a
+  self-heal respawn and the process registration kills the new process too, not just the dead pid.
+- **Pause and cancel actually stop a download.** On Linux and macOS, cancelling killed yt-dlp but
+  not its ffmpeg child, so the merge kept running and the file stayed locked. The whole process
+  tree is now killed (on Windows via `taskkill /T /F`).
+- **Failed downloads can always be removed individually.** The *Remove from list* row action is
+  offered for every job state (it used to vanish in some), and removing a live download cancels it
+  first. Clear-finished remains as the bulk path.
+- **Duplicate detection sees nested folders.** The destination-folder scan now recurses (playlist
+  folders, per-source subfolders) and ignores the `.incoming` staging folder and `*.part` files.
+- **Recording a finished download no longer happens in the frontend.** The ledger and history are
+  written by the backend on yt-dlp's `after_move:DONE` line, fixing playlists being logged as one
+  entry with the last item's id and a size of 0 — sizes are read from disk and every item is logged.
+
 ## [4.16.0] - 2026-11-15
 
 ### Added

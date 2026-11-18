@@ -191,13 +191,13 @@ puts actions in its title bar is a web page in a window.
 
 ### Rail (`208px`, collapsing to `56px` below 880px`)
 
-Five destinations, icon and label, in the order they are used. Active item:
+Six destinations, icon and label, in the order they are used: Pluck, Queue, Saved, History, Search, Settings. Active item:
 `--surface-hover` fill, a 2px `--accent` bar on the leading edge, `--text`
 label. Inactive: `--text-2`, no fill. The icon rail below 880px is the same
-five items with the label hidden and the icon centred; there is no separate
+six items with the label hidden and the icon centred; there is no separate
 code path, only a width and a media query.
 
-The rail is collapsed rather than hidden because the app has five destinations,
+The rail is collapsed rather than hidden because the app has six destinations,
 not fifty. Losing the labels at the app's minimum width is a real loss; it is
 the right trade, and the icons carry tooltips via `title`.
 
@@ -223,7 +223,7 @@ per-item state belongs to the row it belongs to.
 ### 6.1 View header
 
 Title (`17px/600`) on the left, the view's actions on the right, on one 44px
-line. No subtitle: the four destinations are named in the rail, and a subtitle
+line. No subtitle: the six destinations are named in the rail, and a subtitle
 that repeats the title is a label with no information in it.
 
 ### 6.2 Tables

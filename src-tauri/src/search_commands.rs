@@ -17,6 +17,9 @@ use tauri_plugin_shell::process::CommandEvent;
 use crate::engine;
 use crate::errors::{self, FailureKind};
 use crate::extractors::{self, EpisodeRef, SearchOpts, SearchResult, SeriesDetail, SiteInfo, StreamOption};
+use crate::history;
+use crate::ledger;
+use crate::platform;
 use crate::pluck::{self, DonePayload, ErrorPayload, ItemStartPayload, Throttle};
 use crate::{PluckJob, PluckState};
 
@@ -139,9 +142,32 @@ async fn run_stream_batch(
     paused: Arc<AtomicBool>,
 ) {
     let total = episodes.len() as u64;
+    let job_platform = platform::platform_for("", Some(&site));
+    let subdir = platform::sanitise_folder(&job_platform);
+    // All partial files land in ONE staging directory inside the
+    // destination; the merge moves finished episodes into the destination.
+    let incoming_dir = std::path::Path::new(&dest_dir).join(".incoming");
+    if let Err(e) = std::fs::create_dir_all(&incoming_dir) {
+        let _ = app.emit(
+            "pluck://error",
+            ErrorPayload {
+                job_id,
+                message: format!("temp dir: {e}"),
+                friendly: "could not create the staging folder".to_string(),
+                kind: "other".to_string(),
+            },
+        );
+        app.state::<PluckState>().0.lock().unwrap().remove(&job_id);
+        return;
+    }
+    let incoming = incoming_dir.to_string_lossy().into_owned();
     // Job-level verdict: the most specific failure seen across all episodes.
     let mut batch_worst: Option<(FailureKind, String)> = None;
-    let finish = |ok: bool, was_cancelled: bool, worst: &Option<(FailureKind, String)>| {
+    let mut last_done: Option<String> = None;
+    let finish = |ok: bool,
+                  was_cancelled: bool,
+                  worst: &Option<(FailureKind, String)>,
+                  last_done: Option<&std::path::Path>| {
         let done = if ok {
             DonePayload::ok(job_id, true, false)
         } else if was_cancelled {
@@ -149,6 +175,22 @@ async fn run_stream_batch(
         } else {
             DonePayload::failed(job_id, worst)
         };
+        // Log the attempt in the history so a lost episode can be fetched
+        // again. Skips cancels, matching the plain-pluck behaviour.
+        if !was_cancelled {
+            let kind = worst.as_ref().map(|(k, _)| k.as_str().to_string());
+            let entry = history::outcome_entry(
+                None,
+                title.clone(),
+                job_platform.clone(),
+                quality.clone(),
+                false,
+                ok,
+                kind,
+                last_done,
+            );
+            let _ = history::record(&app, entry);
+        }
         let _ = app.emit("pluck://done", done);
         app.state::<PluckState>().0.lock().unwrap().remove(&job_id);
     };
@@ -166,7 +208,7 @@ async fn run_stream_batch(
                     kind: f.kind.to_string(),
                 },
             );
-            finish(false, false, &batch_worst);
+            finish(false, false, &batch_worst, None);
             return;
         }
     };
@@ -184,7 +226,7 @@ async fn run_stream_batch(
                     kind: f.kind.to_string(),
                 },
             );
-            finish(false, false, &batch_worst);
+            finish(false, false, &batch_worst, None);
             return;
         }
     };
@@ -270,6 +312,8 @@ async fn run_stream_batch(
             Some(out_name.as_str()),
             None,
             None,
+            Some(incoming.as_str()),
+            Some(subdir.as_str()),
         ) {
             Ok(a) => a,
             Err(e) => {
@@ -312,8 +356,12 @@ async fn run_stream_batch(
                     CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
                         for line in text.lines() {
-                            let (_filepath, failure) =
+                            let (filepath, failure) =
                                 pluck::handle_stream_line(&app, job_id, ordinal, line, &mut throttle);
+                            if let Some(path) = &filepath {
+                                last_done = Some(path.clone());
+                                ledger::record_file(&app, std::path::Path::new(path), &job_platform);
+                            }
                             ep_worst = errors::worse(ep_worst, failure);
                         }
                     }
@@ -389,7 +437,12 @@ async fn run_stream_batch(
     }
     // Re-resolution is required on any resume, so the archive is disposable.
     let _ = std::fs::remove_file(&archive);
-    finish(ok_all && any_done && !was_cancelled, was_cancelled, &batch_worst);
+    finish(
+        ok_all && any_done && !was_cancelled,
+        was_cancelled,
+        &batch_worst,
+        last_done.as_deref().map(std::path::Path::new),
+    );
 }
 
 fn emit_ep_error(app: &AppHandle, job_id: u64, episode: &str, msg: &str, friendly: &str, kind: &str) {

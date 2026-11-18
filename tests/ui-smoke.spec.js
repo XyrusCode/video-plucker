@@ -99,9 +99,9 @@ test("every cached getElementById in main.js resolves", async ({ page }) => {
   expect(missing, "ids referenced by main.js but absent from index.html").toEqual([]);
 });
 
-test("the rail has five destinations and exactly one is active", async ({ page }) => {
+test("the rail has six destinations and exactly one is active", async ({ page }) => {
   // DESIGN.md §5: a rail, not pill chips.
-  await expect(page.locator(".rail .rail-item")).toHaveCount(5);
+  await expect(page.locator(".rail .rail-item")).toHaveCount(6);
   await expect(page.locator(".rail .rail-item.active")).toHaveCount(1);
   await expect(page.locator(".rail .rail-item.active")).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".pill-chip, .pill-row")).toHaveCount(0);
@@ -112,6 +112,7 @@ test("each rail item shows its view and moves the active marker", async ({ page 
     ["nav-download", "view-download"],
     ["nav-queue", "view-queue"],
     ["nav-saved", "view-saved"],
+    ["nav-history", "view-history"],
     ["nav-search", "view-search"],
     ["nav-settings", "view-settings"],
   ];
@@ -152,7 +153,7 @@ test("status bar shows engine state and the running version", async ({ page }) =
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.14.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.17.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {
@@ -286,6 +287,26 @@ test("clearing a failed download takes its failure notice with it", async ({ pag
   await expect(page.locator("#plucks .notice.error")).toHaveCount(0);
   // The interrupted download is not finished, so it stays.
   await expect(page.locator("#plucks tr.row")).toHaveCount(1);
+});
+
+test("the history logs finished and failed downloads and can fetch them again", async ({ page }) => {
+  await page.locator("#nav-history").click();
+  await expect(page.locator("#view-history")).toBeVisible();
+  await expect(page.locator("#history-list tr.row")).toHaveCount(2);
+
+  const failed = page.locator("#history-list tr.row", { hasText: "A Failed Stream" });
+  await expect(failed.locator(".cell-status")).toHaveClass(/fail/);
+  // A stream entry keeps no replayable link, so there is nothing to re-download.
+  await expect(failed.locator('button[aria-label="Download this again"]')).toHaveCount(0);
+
+  const row = page.locator("#history-list tr.row", { hasText: "A Logged Video" });
+  await expect(row.locator(".cell-status")).toHaveClass(/\bok\b/);
+  await row.locator('button[aria-label="Download this again"]').click();
+  const started = await page.evaluate(() =>
+    window.__invokeLog.filter((c) => c.cmd === "start_pluck"),
+  );
+  expect(started.length, "the re-download did not start").toBeGreaterThan(0);
+  await expect(page.locator("#view-download")).toBeVisible();
 });
 
 test("a job row does not overflow its table", async ({ page }) => {

@@ -120,7 +120,7 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.14.0";
+          return "4.17.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;
@@ -191,6 +191,44 @@ window.__TAURI__ = {
                 downloadedAt: 1700000000000,
               }
             : null;
+        case "history_entries":
+          return [
+            {
+              id: "h1",
+              url: "https://www.youtube.com/watch?v=hist1",
+              videoId: "hist1",
+              title: "A Logged Video",
+              platform: "YouTube",
+              quality: "480",
+              playlistMode: false,
+              status: "completed",
+              failureKind: null,
+              fileName: "A Logged Video [hist1].mp4",
+              sizeBytes: 1234,
+              downloadedAt: 1700000000000,
+            },
+            {
+              id: "h2",
+              url: null,
+              videoId: null,
+              title: "A Failed Stream",
+              platform: "LuciferDonghua",
+              quality: "720",
+              playlistMode: false,
+              status: "failed",
+              failureKind: "network",
+              fileName: null,
+              sizeBytes: null,
+              downloadedAt: 1700000001000,
+            },
+          ];
+        case "history_remove":
+        case "history_clear":
+          return null;
+        case "clear_temp":
+          return 0;
+        case "list_active_jobs":
+          return [];
         case "ledger_entries":
           return [];
         case "ledger_record":
@@ -263,6 +301,9 @@ window.__TAURI__ = {
       return "C:\\picked\\video-plucker-dump-4.8.0-1.json";
     },
     async message() {
+      return true;
+    },
+    async ask() {
       return true;
     },
   },

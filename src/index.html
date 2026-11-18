@@ -57,6 +57,12 @@
         </svg>
         <span class="rail-text">Saved</span>
       </button>
+      <button id="nav-history" class="rail-item" title="History">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="10" cy="10" r="6.5" /><path d="M10 6.8v3.6l2.3 1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="rail-text">History</span>
+      </button>
       <button id="nav-search" class="rail-item" title="Search">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
           <circle cx="9" cy="9" r="5" /><path d="m12.8 12.8 3.2 3.2" stroke-linecap="round" />
@@ -194,7 +200,7 @@
           <h1 class="view-title">Queue</h1>
           <span id="queue-sub" class="view-sub">Parked downloads waiting for you</span>
           <div class="view-actions">
-            <button id="queue-start-all-btn" class="quiet">Start all</button>
+            <button id="queue-start-all-btn" class="quiet">Download all</button>
           </div>
         </div>
 
@@ -217,11 +223,49 @@
         </div>
       </section>
 
+      <!-- ============ History ============ -->
+      <section id="view-history" class="view">
+        <div class="view-header">
+          <h1 class="view-title">History</h1>
+          <span id="history-sub" class="view-sub">Every download, finished or failed</span>
+          <div class="view-actions">
+            <button id="history-clear-btn" class="quiet">Clear history</button>
+          </div>
+        </div>
+
+        <div class="view-body">
+          <table class="table" id="history-table">
+            <colgroup>
+              <col class="c-name" />
+              <col class="c-format col-format" />
+              <col class="c-date" />
+              <col class="c-status" />
+              <col class="c-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col" class="col-format">Format</th>
+                <th scope="col">Date</th>
+                <th scope="col">Status</th>
+                <th scope="col" style="width: 1%"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="history-list"></tbody>
+          </table>
+          <div id="history-empty" class="empty">
+            <span class="empty-title">Nothing in the history yet</span>
+            <span>Finished and failed downloads are logged here so you can get them again.</span>
+          </div>
+        </div>
+      </section>
+
       <!-- ============ Saved ============ -->
       <section id="view-saved" class="view">
         <div class="view-header">
           <h1 class="view-title">Saved</h1>
           <div class="view-actions">
+            <button id="saved-download-all-btn" class="quiet">Download all</button>
             <button id="saved-refresh-btn" class="quiet">Refresh</button>
           </div>
         </div>
@@ -383,6 +427,20 @@
                     <option value="4">4 downloads</option>
                     <option value="5">5 downloads</option>
                   </select>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-text">
+                  <span class="setting-title">Temp files</span>
+                  <p class="setting-desc">
+                    Partial downloads live in a <code>.incoming</code> folder inside the destination
+                    folder until they finish and are merged. Finished files are never touched.
+                  </p>
+                </div>
+                <div class="setting-control">
+                  <button id="clear-temp-btn">Clear temp files</button>
+                  <span id="clear-temp-status" class="field-hint"></span>
                 </div>
               </div>
 

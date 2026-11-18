@@ -152,6 +152,13 @@ pub fn build_args(
     // Path to a Netscape-format cookies.txt file for platforms that require
     // login (Twitter/X, YouTube, TikTok).
     cookies_file: Option<&str>,
+    // When set, yt-dlp downloads and merges here instead of next to the
+    // destination; the finished file is moved into the destination after the
+    // merge. Keeps all partial files in ONE directory.
+    temp_dir: Option<&str>,
+    // When set, prefixes the output template with "<subdir>/" so finished
+    // files are sorted into per-source directories. Folder-safe.
+    subdir: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let ffmpeg = sidecar::ffmpeg_path()?;
 
@@ -199,30 +206,35 @@ pub fn build_args(
     .map(|s| s.to_string())
     .collect();
 
+    if let Some(temp) = temp_dir {
+        args.push("-P".to_string());
+        args.push(format!("temp:{temp}"));
+    }
+    let dir_prefix = subdir.map(|s| format!("{}/", s)).unwrap_or_default();
+
     if let Some(name) = out_name {
         // Resolved-stream job: one URL per yt-dlp run, named by the caller.
         args.extend(
             ["--no-playlist", "-o"]
                 .iter()
                 .map(|s| s.to_string())
-                .chain(std::iter::once(format!("{name}.%(ext)s"))),
+                .chain(std::iter::once(format!("{dir_prefix}{name}.%(ext)s"))),
         );
     } else if playlist_mode {
+        let template = format!("{dir_prefix}%(playlist_title)s/%(playlist_index)03d - %(title)s [%(id)s].%(ext)s");
         args.extend(
             [
-                "--yes-playlist",
-                "--ignore-errors",
-                "-o",
-                "%(playlist_title)s/%(playlist_index)03d - %(title)s [%(id)s].%(ext)s",
+                "--yes-playlist".to_string(),
+                "--ignore-errors".to_string(),
+                "-o".to_string(),
+                template,
             ]
-            .iter()
-            .map(|s| s.to_string()),
+            .into_iter(),
         );
     } else {
+        let template = format!("{dir_prefix}%(title)s [%(id)s].%(ext)s");
         args.extend(
-            ["--no-playlist", "-o", "%(title)s [%(id)s].%(ext)s"]
-                .iter()
-                .map(|s| s.to_string()),
+            ["--no-playlist".to_string(), "-o".to_string(), template].into_iter(),
         );
     }
 
@@ -336,6 +348,9 @@ pub enum LineOutcome {
     },
     /// An error line, with the classified verdict.
     Failure(FailureKind, String),
+    /// yt-dlp moved an output into place. Carries the final filepath, so the
+    /// backend can record the download instead of relying on the frontend.
+    Done(String),
 }
 
 /// Parse one yt-dlp output line for a normal pluck. Returns what the line
@@ -412,7 +427,7 @@ pub fn handle_line(
                 filepath: p[1].to_string(),
             },
         );
-        return LineOutcome::Nothing;
+        return LineOutcome::Done(p[1].to_string());
     } else if line.starts_with("ERROR") {
         let failure = errors::classified(line, None);
         let _ = app.emit(
@@ -522,8 +537,37 @@ pub fn kill_tree(pid: u32) {
     }
     #[cfg(not(windows))]
     {
-        let _ = std::process::Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .status();
+        // No process-group control from tauri-plugin-shell, so collect the
+        // whole descendant tree first (children disappear when their parent
+        // dies and would be re-parented to init), then SIGKILL bottom-up.
+        fn descendants(pid: u32) -> Vec<u32> {
+            let mut out = vec![pid];
+            let mut i = 0;
+            while i < out.len() {
+                let parent = out[i];
+                if let Ok(output) = std::process::Command::new("pgrep")
+                    .arg("-P")
+                    .arg(parent.to_string())
+                    .output()
+                {
+                    for line in String::from_utf8_lossy(&output.stdout).lines() {
+                        if let Ok(child) = line.trim().parse::<u32>() {
+                            if child != pid && !out.contains(&child) {
+                                out.push(child);
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+            out
+        }
+        let mut victims = descendants(pid);
+        victims.reverse(); // children first, parent last
+        for victim in victims {
+            let _ = std::process::Command::new("kill")
+                .args(["-9", &victim.to_string()])
+                .status();
+        }
     }
 }

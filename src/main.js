@@ -1,6 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-const { open, save } = window.__TAURI__.dialog;
+const { open, save, ask } = window.__TAURI__.dialog;
 const { load } = window.__TAURI__.store;
 const { revealItemInDir, openUrl } = window.__TAURI__.opener;
 const { downloadDir } = window.__TAURI__.path;
@@ -47,6 +47,7 @@ const navDownload = document.getElementById("nav-download");
 const navSearch = document.getElementById("nav-search");
 const navQueue = document.getElementById("nav-queue");
 const navSaved = document.getElementById("nav-saved");
+const navHistory = document.getElementById("nav-history");
 const navSettings = document.getElementById("nav-settings");
 const railActiveCount = document.getElementById("rail-active-count");
 
@@ -60,7 +61,15 @@ const viewDownload = document.getElementById("view-download");
 const viewSearch = document.getElementById("view-search");
 const viewQueue = document.getElementById("view-queue");
 const viewSaved = document.getElementById("view-saved");
+const viewHistory = document.getElementById("view-history");
 const viewSettings = document.getElementById("view-settings");
+const historyList = document.getElementById("history-list");
+const historyEmpty = document.getElementById("history-empty");
+const historySub = document.getElementById("history-sub");
+const historyClearBtn = document.getElementById("history-clear-btn");
+const savedDownloadAllBtn = document.getElementById("saved-download-all-btn");
+const clearTempBtn = document.getElementById("clear-temp-btn");
+const clearTempStatus = document.getElementById("clear-temp-status");
 const queueList = document.getElementById("queue-list");
 const queueEmpty = document.getElementById("queue-empty");
 const queueSub = document.getElementById("queue-sub");
@@ -204,6 +213,7 @@ async function initSettings() {
   await restoreInterruptedPlucks();
   renderPlucksEmptyState();
   await renderQueue();
+  await renderHistory();
   await renderCookies();
 }
 
@@ -739,24 +749,50 @@ function hideBatch() {
 
 async function pluckTile(tile) {
   if (!tile.meta) return;
-  // Auto-skip: a tile for a video already on the device is not queued.
   if (tile.meta.duplicate) {
-    tile.sub.textContent = "Already downloaded - not queued";
-    return;
+    const dup = tile.meta.duplicate;
+    const when = dup.downloadedAt ? new Date(dup.downloadedAt).toLocaleDateString() : null;
+    const again = await ask(
+      `“${dup.title}” was already downloaded${when ? ` on ${when}` : ""}. Download it again?`,
+      { title: "Already downloaded", okLabel: "Download again", cancelLabel: "Skip" },
+    );
+    if (!again) {
+      tile.sub.textContent = "Already downloaded - not queued";
+      return;
+    }
   }
-  await startPluck(tile.url, tile.meta);
+  await startPluck(tile.url, tile.meta, { skipDuplicateCheck: true });
   removeTile(tile);
+}
+
+/**
+ * One prompt for a whole "download all" batch. Re-checks every id against
+ * the ledger/dest folder (cheap) and, when anything is already downloaded,
+ * asks once whether to skip those instead of asking once per item.
+ */
+async function bulkDuplicateDecision(ids) {
+  const matches = await Promise.all(
+    ids.map((id) => (id ? findDuplicate(id) : null)),
+  );
+  const dupes = matches.filter(Boolean).length;
+  if (!dupes) return { matches, skipDupes: false };
+  const skip = await ask(
+    `${dupes} of these ${dupes === 1 ? "was" : "were"} already downloaded. Skip the ones you already have?`,
+    { title: "Already downloaded", okLabel: "Skip those", cancelLabel: "Download all anyway" },
+  );
+  return { matches, skipDupes: skip };
 }
 
 pluckAllBtn.addEventListener("click", async () => {
   const ready = batchTiles.filter((t) => t.state === "ready");
-  for (const tile of ready) {
-    // A tile for a video already on the device is skipped, not queued.
-    if (tile.meta?.duplicate) {
+  const { matches, skipDupes } = await bulkDuplicateDecision(ready.map((t) => t.meta?.id || null));
+  for (let i = 0; i < ready.length; i++) {
+    const tile = ready[i];
+    if (skipDupes && matches[i]) {
       tile.sub.textContent = "Already downloaded - not queued";
       continue;
     }
-    await startPluck(tile.url, tile.meta);
+    await startPluck(tile.url, tile.meta, { skipDuplicateCheck: true });
     removeTile(tile);
   }
 });
@@ -876,6 +912,15 @@ function recordSpeed(job, speed) {
 function setEngine(message) {
   engineMessage = message;
   updateStatusBar();
+}
+
+/** A one-off status flash that clears itself, for errors the user must see. */
+function flashStatus(message) {
+  setEngine(message);
+  clearTimeout(flashStatus._timer);
+  flashStatus._timer = setTimeout(() => {
+    if (engineMessage === message) setEngine(null);
+  }, 6000);
 }
 
 function updateStatusBar() {
@@ -1030,8 +1075,9 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     }
     try {
       await invoke("cancel_pluck", { jobId });
-    } catch {
+    } catch (err) {
       job.cancelBtn.disabled = false;
+      flashStatus(`Could not cancel: ${err}`);
     }
   });
 
@@ -1039,8 +1085,9 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
     job.pauseBtn.disabled = true;
     try {
       await invoke("pause_pluck", { jobId });
-    } catch {
+    } catch (err) {
       job.pauseBtn.disabled = false;
+      flashStatus(`Could not pause: ${err}`);
     }
   });
 
@@ -1049,6 +1096,16 @@ function createJobCard(jobId, params, { completed = 0, titles = [] } = {}) {
   job.queueBtn.addEventListener("click", () => queueForLater(job));
   job.reportBtn.addEventListener("click", () => reportIssue(job));
   job.dismissBtn.addEventListener("click", async () => {
+    // A live download removed from the list must not keep running behind
+    // the user's back: cancel it first, then sweep the row away.
+    const live = !job.cancelBtn.classList.contains("hidden");
+    if (live) {
+      try {
+        await invoke("cancel_pluck", { jobId });
+      } catch {
+        // Already gone or never started — removal proceeds either way.
+      }
+    }
     await removeRecord(jobId);
     removeFromActiveJobs(job);
     removeFromQueue(job);
@@ -1304,7 +1361,8 @@ async function beginPluck(job, { fresh }) {
   job.queueBtn.classList.add("hidden");
   job.reportBtn.classList.add("hidden");
   job.openBtn.classList.add("hidden");
-  job.dismissBtn.classList.add("hidden");
+  // "Remove from list" stays available for the whole life of the row.
+  job.dismissBtn.classList.remove("hidden");
   const failmsg = job.failRow;
   if (failmsg) {
     failmsg.remove();
@@ -1338,6 +1396,8 @@ async function beginPluck(job, { fresh }) {
         destDir: job.params.destDir,
         playlistMode: job.params.playlistMode,
         cookiesFromBrowser: job.params.cookiesFromBrowser ?? null,
+        title: job.params.title || null,
+        source: job.params.source || null,
       });
     }
     job.statusTextEl.textContent = "Plucking";
@@ -1350,9 +1410,8 @@ async function beginPluck(job, { fresh }) {
 async function resumeJob(job) {
   job.completed = 0; // the archive is the source of truth; rebuild from events
   if (job.isPlaylist) buildItemRows(job);
-  // A paused job still holds its download slot, so it must not be queued behind others.
-  // `activeJob` never existed; the set is `activeJobs`, so this threw a ReferenceError on
-  // every Resume press and no paused download could ever be restarted.
+  // A paused job released its slot, so it goes back through the FIFO like any
+  // new job; parallel mode starts it immediately.
   if (activeJobs.has(job.id)) {
     await beginPluck(job, { fresh: false });
   } else {
@@ -1422,9 +1481,24 @@ function removeFromQueue(job) {
  * Start a download for a link that has been analysed.
  *
  * The single card and every tile in a batch come through here, so a link
- * behaves the same however it was read.
+ * behaves the same however it was read. The duplicate check is hoisted here
+ * (unless the caller already did its own, or the user explicitly re-downloads
+ * from History), so even a deep link or a parked item cannot slip past the
+ * warning. A bulk prompt is the caller's job: pass skipDuplicateCheck after
+ * asking once for the whole batch.
  */
-async function startPluck(url, meta) {
+async function startPluck(url, meta, { skipDuplicateCheck = false } = {}) {
+  if (!skipDuplicateCheck && meta && meta.id) {
+    const dup = await findDuplicate(meta.id);
+    if (dup) {
+      const when = dup.downloadedAt ? new Date(dup.downloadedAt).toLocaleDateString() : null;
+      const again = await ask(
+        `“${dup.title}” was already downloaded${when ? ` on ${when}` : ""}. Download it again?`,
+        { title: "Already downloaded", okLabel: "Download again", cancelLabel: "Skip" },
+      );
+      if (!again) return;
+    }
+  }
   const isPlaylist = meta.kind === "playlist";
   const params = {
     url,
@@ -1434,6 +1508,7 @@ async function startPluck(url, meta) {
     title: meta.title,
     itemCount: isPlaylist ? meta.entryCount : 1,
     cookiesFromBrowser: cookiesFromBrowser(),
+    source: meta.source || null,
     // The video id travels with the job so a parked item can be duplicate-checked when it
     // starts. Null for a playlist, which has no single id.
     videoId: meta.id || null,
@@ -1449,7 +1524,9 @@ async function startPluck(url, meta) {
 pluckBtn.addEventListener("click", async () => {
   if (!currentMeta) return;
   if (currentMeta.duplicate) {
-    // Auto-skip: nothing is queued. Download anyway is the way past the warning.
+    // The banner is the prompt: nothing is queued until the user picks
+    // Download anyway. The hoisted check inside startPluck covers every
+    // other path (saved tiles, queue, deep links, history).
     analyzeError.textContent = "Skipped: already downloaded. Use Download anyway to fetch it again.";
     analyzeError.classList.remove("hidden");
     return;
@@ -1462,7 +1539,9 @@ pluckBtn.addEventListener("click", async () => {
 duplicateForce.addEventListener("click", async () => {
   if (!currentMeta) return;
   hideDuplicate();
-  await startPluck(cleanPlatformUrl(urlInput.value.trim()), currentMeta);
+  await startPluck(cleanPlatformUrl(urlInput.value.trim()), currentMeta, {
+    skipDuplicateCheck: true,
+  });
   clearInput();
 });
 
@@ -1487,35 +1566,8 @@ function hideDuplicate() {
   duplicateBanner.classList.add("hidden");
 }
 
-// Same rules as DuplicateGuard.kt and ledger.rs: the id is the last [id] token before the extension.
-const ID_TOKEN = /\[([^[\]]+)\]\.[A-Za-z0-9]+$/;
-
-function idFromFileName(name) {
-  const m = ID_TOKEN.exec(name);
-  return m ? m[1] : null;
-}
-
-function titleFromFileName(name) {
-  const stem = name.replace(/\.[A-Za-z0-9]+$/, "");
-  return stem.replace(/\s*\[[^[\]]+\]$/, "").trim() || name;
-}
-
-/** Records a finished download. The size is 0: the frontend has no file-system access to read it. */
-function recordLedger(job) {
-  const fileName = job.lastFile.split(/[\\/]/).pop();
-  const id = idFromFileName(fileName);
-  if (!id) return;
-  invoke("ledger_record", {
-    entry: {
-      id,
-      title: titleFromFileName(fileName),
-      fileName,
-      sizeBytes: 0,
-      platform: platformForReport(job.params.url),
-      downloadedAt: Date.now(),
-    },
-  }).catch(() => {});
-}
+// Downloads are recorded by the backend (ledger + history) on the yt-dlp
+// after_move:DONE line, so this file no longer keeps a copy of the rules.
 
 // Re-create cards for plucks that were still active when the app last closed.
 // When the window was torn down to the tray (not a crash), the downloads kept
@@ -1628,11 +1680,12 @@ function finishJob(job, { ok, cancelled, error }) {
     job.statusTextEl.textContent = "Completed";
     job.statusEl.className = "cell-status ok";
     if (job.lastFile) job.openBtn.classList.remove("hidden");
-    if (job.lastFile) recordLedger(job);
+    job.dismissBtn.classList.remove("hidden");
     removeRecord(job.id);
   } else if (cancelled) {
     job.statusTextEl.textContent = "Cancelled";
     job.statusEl.className = "cell-status";
+    job.dismissBtn.classList.remove("hidden");
     removeRecord(job.id);
   } else {
     // Failed: plain-language verdict only (raw lines are kept for reports),
@@ -1796,6 +1849,7 @@ listen("pluck://done", ({ payload }) => {
     job.friendlyError = payload.friendly || null;
   }
   finishJob(job, { ok: payload.ok, cancelled: payload.cancelled });
+  renderHistory();
 });
 
 listen("pluck://paused", ({ payload }) => {
@@ -1808,6 +1862,9 @@ listen("pluck://paused", ({ payload }) => {
   job.resumeBtn.classList.remove("hidden");
   job.dismissBtn.classList.remove("hidden");
   job.speed = 0;
+  // A paused job is not running, so its slot frees up for the next queued
+  // download. Resume re-queues through the FIFO.
+  removeFromActiveJobs(job);
   patchRecord(job.id, { status: "paused", completed: job.completed });
   renderRowActions(job);
   updateStatusBar();
@@ -1955,20 +2012,29 @@ function qualityLabel(q) {
   }
 }
 
-async function startQueued(key, item) {
-  await queueStore.delete(key);
+async function startQueued(key, item, { skipDuplicateCheck = false } = {}) {
   // A parked item carries the id it was analyzed with, so a video downloaded since it was
   // parked is caught here too. An item from an older backup has no id and is not checked.
   const videoId = item.params?.videoId;
-  if (videoId) {
+  if (!skipDuplicateCheck && videoId) {
     const duplicate = await findDuplicate(videoId);
     if (duplicate) {
-      // renderQueue rewrites the sub-line, so the note goes after it.
-      await renderQueue();
-      queueSub.textContent = "Skipped one: already downloaded.";
-      return;
+      const when = duplicate.downloadedAt ? new Date(duplicate.downloadedAt).toLocaleDateString() : null;
+      // The item stays parked when the user skips: a skip must never eat the
+      // only copy of a deliberate save.
+      const again = await ask(
+        `“${duplicate.title}” was already downloaded${when ? ` on ${when}` : ""}. Download it again?`,
+        { title: "Already downloaded", okLabel: "Download again", cancelLabel: "Skip" },
+      );
+      if (!again) {
+        // renderQueue rewrites the sub-line, so the note goes after it.
+        await renderQueue();
+        queueSub.textContent = "Skipped one: already downloaded.";
+        return;
+      }
     }
   }
+  await queueStore.delete(key);
   const jobId = nextJobId++;
   await saveSetting("nextJobId", nextJobId);
   const job = createJobCard(jobId, {
@@ -1989,13 +2055,137 @@ async function startQueued(key, item) {
 queueStartAllBtn.addEventListener("click", async () => {
   queueStartAllBtn.disabled = true;
   try {
-    // Oldest first, the same order the list shows.
-    for (const { key, item } of await sortedQueueEntries()) {
-      if (item && item.params) await startQueued(key, item);
+    // Oldest first, the same order the list shows. One prompt covers
+    // duplicates across the whole batch.
+    const parked = (await sortedQueueEntries()).filter(({ item }) => item && item.params);
+    const { matches, skipDupes } = await bulkDuplicateDecision(
+      parked.map(({ item }) => item.params?.videoId || null),
+    );
+    for (let i = 0; i < parked.length; i++) {
+      if (skipDupes && matches[i]) continue;
+      await startQueued(parked[i].key, parked[i].item, { skipDuplicateCheck: true });
     }
   } finally {
     queueStartAllBtn.disabled = false;
   }
+});
+
+/* ---------- history view ---------- */
+
+// Every download this install ever attempted, finished or failed. Kept in
+// history.json on the Rust side (see history.rs); this renders it and offers
+// the one action that matters: get the file again.
+
+function fmtHistoryDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+async function renderHistory() {
+  let entries = [];
+  try {
+    entries = await invoke("history_entries");
+  } catch {
+    entries = [];
+  }
+  entries = entries.slice().reverse(); // newest first
+  historySub.textContent = entries.length
+    ? `${entries.length} ${entries.length === 1 ? "download" : "downloads"} logged`
+    : "Every download, finished or failed";
+  historyList.innerHTML = "";
+  historyEmpty.classList.toggle("hidden", entries.length > 0);
+  document.getElementById("history-table").classList.toggle("hidden", entries.length === 0);
+  for (const entry of entries) historyList.appendChild(createHistoryRow(entry));
+}
+
+function createHistoryRow(entry) {
+  const tr = document.createElement("tr");
+  tr.className = "row";
+  tr.innerHTML = `
+    <td><span class="name"></span></td>
+    <td class="col-format"></td>
+    <td class="cell-date"></td>
+    <td><span class="cell-status"><span class="dot"></span><span class="status-text"></span></span></td>
+    <td><span class="cell-actions"></span></td>
+  `;
+  const nameEl = tr.querySelector(".name");
+  nameEl.textContent = entry.title || "Untitled download";
+  nameEl.title = entry.fileName || entry.url || entry.title || "";
+  tr.querySelector(".col-format").textContent = entry.quality ? qualityLabel(entry.quality) : "";
+  tr.querySelector(".cell-date").textContent = fmtHistoryDate(entry.downloadedAt);
+  const statusEl = tr.querySelector(".cell-status");
+  const statusText = tr.querySelector(".status-text");
+  const ok = entry.status === "completed";
+  statusEl.className = `cell-status ${ok ? "ok" : "fail"}`;
+  statusText.textContent = ok ? "Completed" : "Failed";
+  if (!ok && entry.failureKind) statusText.title = entry.failureKind;
+
+  const actions = tr.querySelector(".cell-actions");
+  const mk = (icon, label, danger = false) => {
+    const b = document.createElement("button");
+    b.className = `row-action${danger ? " danger" : ""}`;
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.title = label;
+    b.innerHTML = ICONS[icon];
+    return b;
+  };
+  if (entry.url) {
+    const redo = mk("retry", "Download this again");
+    redo.addEventListener("click", async () => {
+      redo.disabled = true;
+      await startPluck(
+        entry.url,
+        {
+          kind: entry.playlistMode ? "playlist" : "video",
+          title: entry.title,
+          entryCount: null,
+          entries: [],
+          id: entry.videoId || null,
+          source: null,
+        },
+        // Re-downloading from History is explicit: no duplicate prompt.
+        { skipDuplicateCheck: true },
+      );
+      showView("download");
+    });
+    actions.appendChild(redo);
+
+    const copy = mk("link", "Copy original link");
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(entry.url);
+        flashCopied(copy);
+      } catch {}
+    });
+    actions.appendChild(copy);
+  }
+  const remove = mk("trash", "Remove from history", true);
+  remove.addEventListener("click", async () => {
+    try {
+      await invoke("history_remove", { id: entry.id });
+    } catch (err) {
+      flashStatus(`Could not remove the entry: ${err}`);
+    }
+    await renderHistory();
+  });
+  actions.appendChild(remove);
+  return tr;
+}
+
+historyClearBtn.addEventListener("click", async () => {
+  const ok = await ask(
+    "Remove every entry from the history? Files already on disk are not touched.",
+    { title: "Clear history", okLabel: "Clear history", cancelLabel: "Keep" },
+  );
+  if (!ok) return;
+  try {
+    await invoke("history_clear");
+  } catch (err) {
+    flashStatus(`Could not clear the history: ${err}`);
+  }
+  await renderHistory();
 });
 
 /* ---------- issue reporting ---------- */
@@ -2257,6 +2447,8 @@ function createSavedTile(item) {
       title: item.title,
       entryCount: null,
       entries: [],
+      id: item.id || null,
+      source: item.site || null,
     });
   });
   return el;
@@ -2265,6 +2457,42 @@ function createSavedTile(item) {
 savedRefreshBtn.addEventListener("click", () => loadSaved(true));
 savedSiteSelect.addEventListener("change", renderSavedItems);
 savedListSelect.addEventListener("change", () => loadSaved(true));
+savedDownloadAllBtn.addEventListener("click", downloadAllSaved);
+
+function visibleSavedItems() {
+  const site = savedSiteSelect.value;
+  return site ? savedItems.filter((i) => i.site === site) : savedItems;
+}
+
+/** Queue every currently visible saved video; one prompt covers duplicates. */
+async function downloadAllSaved() {
+  const items = visibleSavedItems();
+  if (!items.length) return;
+  savedDownloadAllBtn.disabled = true;
+  savedDownloadAllBtn.textContent = "Starting…";
+  try {
+    const { matches, skipDupes } = await bulkDuplicateDecision(items.map((i) => i.id || null));
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (skipDupes && matches[i]) continue;
+      await startPluck(
+        item.url,
+        {
+          kind: "video",
+          title: item.title,
+          entryCount: null,
+          entries: [],
+          id: item.id || null,
+          source: item.site || null,
+        },
+        { skipDuplicateCheck: true },
+      );
+    }
+  } finally {
+    savedDownloadAllBtn.disabled = false;
+    savedDownloadAllBtn.textContent = "Download all";
+  }
+}
 
 /* ---------- view switching ---------- */
 
@@ -2272,6 +2500,7 @@ const views = {
   download: [navDownload, viewDownload],
   queue: [navQueue, viewQueue],
   saved: [navSaved, viewSaved],
+  history: [navHistory, viewHistory],
   search: [navSearch, viewSearch],
   settings: [navSettings, viewSettings],
 };
@@ -2293,6 +2522,11 @@ navSaved.addEventListener("click", () => {
   // Read the list once per session, not on every visit. The Refresh button
   // is the way back to the network.
   loadSaved();
+});
+navHistory.addEventListener("click", () => {
+  showView("history");
+  // Cheap and always correct: the log only changes when a job terminates.
+  renderHistory();
 });
 navSearch.addEventListener("click", () => showView("search"));
 navSettings.addEventListener("click", () => showView("settings"));
@@ -2862,6 +3096,20 @@ async function initSettingsPage() {
 
   exportDumpBtn.addEventListener("click", exportDump);
   importDumpBtn.addEventListener("click", importDump);
+
+  clearTempBtn.addEventListener("click", async () => {
+    clearTempBtn.disabled = true;
+    clearTempStatus.textContent = "Clearing…";
+    try {
+      const removed = await invoke("clear_temp", { destDir });
+      clearTempStatus.textContent =
+        removed === 0 ? "Temp folder is already clean." : `Removed ${removed} item(s) from .incoming.`;
+    } catch (err) {
+      clearTempStatus.textContent = String(err);
+    } finally {
+      clearTempBtn.disabled = false;
+    }
+  });
 }
 
 function updateConcurrentDownloadsVisibility() {
