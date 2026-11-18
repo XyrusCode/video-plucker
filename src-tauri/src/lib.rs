@@ -3,8 +3,10 @@ mod commands;
 mod dump;
 mod engine;
 mod errors;
+mod history;
 mod ledger;
 mod extractors;
+mod platform;
 mod pluck;
 mod retry;
 mod search_commands;
@@ -216,6 +218,10 @@ pub fn run() {
             ledger::ledger_entries,
             ledger::ledger_record,
             ledger::find_duplicate,
+            history::history_entries,
+            history::history_remove,
+            history::history_clear,
+            commands::clear_temp,
             search_commands::list_sites,
             search_commands::search_content,
             search_commands::get_series_detail,

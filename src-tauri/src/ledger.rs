@@ -137,16 +137,75 @@ pub fn save(app: &AppHandle, entries: &[LedgerEntry]) -> Result<(), String> {
     std::fs::write(&path, text).map_err(|e| format!("Could not write {}: {e}", path.display()))
 }
 
-/// The file names in [dir], or none if it cannot be read.
+/// The file names under [dir], or none if it cannot be read. Recursive:
+/// platform subfolders (YouTube/, TikTok/…) carry finished files too, and a
+/// duplicate must be caught however deep it sits. Dot-directories — the
+/// `.incoming` temp staging area in particular — are skipped, as are files
+/// still carrying a yt-dlp part extension.
 fn file_names_in(dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
+    fn walk(dir: &Path, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if file_type.is_dir() {
+                // Recurse, but not into staging/hidden dirs (.incoming).
+                let hidden = entry
+                    .file_name()
+                    .to_str()
+                    .map(|n| n.starts_with('.'))
+                    .unwrap_or(true);
+                if !hidden {
+                    walk(&path, out);
+                }
+            } else if file_type.is_file() {
+                if let Some(name) = entry.file_name().to_str() {
+                    let lower = name.to_lowercase();
+                    if lower.ends_with(".part") || lower.ends_with(".ytdl") || lower.ends_with(".tmp") {
+                        continue;
+                    }
+                    out.push(name.to_string());
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out
+}
+
+/// Record a just-finished download in the ledger. Called by the backend
+/// when yt-dlp reports an `after_move:DONE|` line, so it works however the
+/// job was started and cannot be forgotten by a new caller. Size is read
+/// from disk, and playlist items record one entry each.
+pub fn record_file(app: &AppHandle, file_path: &Path, platform: &str) {
+    let name = match file_path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => return,
     };
-    entries
-        .flatten()
-        .filter(|e| e.path().is_file())
-        .filter_map(|e| e.file_name().to_str().map(String::from))
-        .collect()
+    let id = match id_from_file_name(&name) {
+        Some(id) => id,
+        None => return,
+    };
+    let size_bytes = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+    let entry = LedgerEntry {
+        id,
+        title: title_from_file_name(&name),
+        file_name: name,
+        size_bytes,
+        platform: platform.to_string(),
+        downloaded_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0),
+    };
+    let merged = merge(&load(app), std::slice::from_ref(&entry));
+    let _ = save(app, &merged);
 }
 
 #[tauri::command]

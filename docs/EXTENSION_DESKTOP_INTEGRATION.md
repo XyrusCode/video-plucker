@@ -148,6 +148,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | 1.2.5     | 4.14.0  | Same protocol; the desktop adds a Saved tab, a batch link field and a retry |
 | 1.2.5     | 4.15.0  | Same protocol; download ledger, duplicate check on analyze, dump v3 |
 | 1.2.5     | 4.16.0  | Same protocol; unlimited parallel downloads, default-quality setting, tray teardown |
+| 1.2.5     | 4.17.0  | Same protocol; history tab, per-source subfolders, download-all, clear temp files |
 
 ## Key Files
 
@@ -162,4 +163,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v4.16.0 (unlimited parallel downloads, default-quality setting, tray teardown; the protocol is unchanged)*
+*Last updated: v4.17.0 (history tab and per-source subfolders; the protocol is unchanged)*

@@ -10,6 +10,9 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
 use crate::engine;
 use crate::errors::{self, FailureKind};
+use crate::history;
+use crate::ledger;
+use crate::platform;
 use crate::pluck::{self, DonePayload, Throttle};
 use crate::retry;
 use crate::{PluckJob, PluckState};
@@ -458,8 +461,18 @@ pub async fn start_pluck(
     dest_dir: String,
     playlist_mode: bool,
     cookies_from_browser: Option<String>,
+    title: Option<String>,
+    source: Option<String>,
 ) -> Result<(), String> {
     let archive = pluck::archive_path(&app, job_id)?;
+    let job_title = title.unwrap_or_else(|| url.clone());
+    let job_platform = platform::platform_for(&url, source.as_deref());
+    let subdir = platform::sanitise_folder(&job_platform);
+    // All partial files land here; the merge moves finished files into the
+    // destination folder, which is what keeps the destination clean.
+    let incoming = std::path::Path::new(&dest_dir).join(".incoming");
+    std::fs::create_dir_all(&incoming).map_err(|e| format!("temp dir: {e}"))?;
+    let incoming = incoming.to_string_lossy().into_owned();
     let cookies_file = cookies_file_for_url(&app, &url);
     if let Some(cf) = &cookies_file {
         // surface which cookies.txt got applied so a missing match is obvious
@@ -479,6 +492,8 @@ pub async fn start_pluck(
         None,
         cookies_from_browser.as_deref(),
         cookies_file.as_deref(),
+        Some(incoming.as_str()),
+        Some(subdir.as_str()),
     )?;
 
     let (mut rx, child) = engine::ytdlp_command(&app)?
@@ -511,6 +526,7 @@ pub async fn start_pluck(
         // connection never gives up.
         let mut attempts_used: u32 = 0;
         let mut progress = retry::Progress::default();
+        let mut last_done: Option<String> = None;
 
         // Every run starts yt-dlp the same way, so it is one closure.
         let start_ytdlp = || -> Result<(Receiver<CommandEvent>, CommandChild), String> {
@@ -554,6 +570,17 @@ pub async fn start_pluck(
                                         attempts_used = 0;
                                     }
                                 }
+                                pluck::LineOutcome::Done(filepath) => {
+                                    last_done = Some(filepath.clone());
+                                    // Every finished item lands in the cross-app
+                                    // ledger here, not in the frontend, so a
+                                    // download cannot escape the record.
+                                    ledger::record_file(
+                                        &app_handle,
+                                        std::path::Path::new(&filepath),
+                                        &job_platform,
+                                    );
+                                }
                                 pluck::LineOutcome::Nothing => {}
                             }
                         }
@@ -589,7 +616,15 @@ pub async fn start_pluck(
                                 );
                                 if engine::update_engine(&app_handle).await.is_ok() {
                                     if let Ok((next_rx, next_child)) = start_ytdlp() {
-                                        set_pid(next_child.pid());
+                                        let new_pid = next_child.pid();
+                                        set_pid(new_pid);
+                                        // A cancel/pause that landed between
+                                        // the respawn and the pid update must
+                                        // kill the NEW process, not the corpse
+                                        // of the old one.
+                                        if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
+                                            pluck::kill_tree(new_pid);
+                                        }
                                         rx = next_rx;
                                         continue 'attempts;
                                     }
@@ -617,7 +652,15 @@ pub async fn start_pluck(
                                     );
                                     tokio::time::sleep(wait).await;
                                     if let Ok((next_rx, next_child)) = start_ytdlp() {
-                                        set_pid(next_child.pid());
+                                        let new_pid = next_child.pid();
+                                        set_pid(new_pid);
+                                        // A cancel/pause that landed between
+                                        // the respawn and the pid update must
+                                        // kill the NEW process, not the corpse
+                                        // of the old one.
+                                        if cancelled.load(Ordering::SeqCst) || paused.load(Ordering::SeqCst) {
+                                            pluck::kill_tree(new_pid);
+                                        }
                                         rx = next_rx;
                                         continue 'attempts;
                                     }
@@ -635,6 +678,24 @@ pub async fn start_pluck(
                             } else {
                                 DonePayload::failed(job_id, &worst)
                             };
+                            // Keep the history honest: log the attempt so a
+                            // lost file can be downloaded again later. Skips
+                            // pauses (not terminal) and cancels (the user
+                            // pulled the plug deliberately).
+                            if !was_paused && !was_cancelled {
+                                let kind = worst.as_ref().map(|(k, _)| k.as_str().to_string());
+                                let entry = history::outcome_entry(
+                                    Some(url.clone()),
+                                    job_title.clone(),
+                                    job_platform.clone(),
+                                    quality.clone(),
+                                    playlist_mode,
+                                    ok,
+                                    kind,
+                                    last_done.as_deref().map(std::path::Path::new),
+                                );
+                                let _ = history::record(&app_handle, entry);
+                            }
                             let _ = app_handle.emit("pluck://done", done);
                         }
                         break;
@@ -671,6 +732,36 @@ pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Stri
     job.paused.store(true, Ordering::SeqCst);
     pluck::kill_tree(job.pid);
     Ok(())
+}
+
+/// Delete the contents of `<dest_dir>/.incoming` (the staging directory all
+/// partial files land in). Refuses while any pluck is running, because the
+/// whole point is that nobody's half-finished download is deleted.
+#[tauri::command]
+pub fn clear_temp(state: State<'_, PluckState>, dest_dir: String) -> Result<u64, String> {
+    {
+        let jobs = state.0.lock().unwrap();
+        if !jobs.is_empty() {
+            return Err("finish or cancel active downloads first".into());
+        }
+    }
+    let dir = std::path::Path::new(&dest_dir).join(".incoming");
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let mut removed = 0u64;
+    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        let res = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if res.is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 /// The ids of the plucks currently running in the backend.

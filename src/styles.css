@@ -390,8 +390,10 @@ body[data-chrome="native"] .titlebar {
 .table col.c-format { width: 84px; }
 .table col.c-size { width: 84px; }
 .table col.c-progress { width: 116px; }
+.table col.c-date { width: 96px; }
+.cell-date { white-space: nowrap; color: var(--text-2); font-size: 12px; }
 .table col.c-status { width: 196px; }
-.table col.c-actions { width: 76px; }
+.table col.c-actions { width: 84px; }
 
 .table thead th {
   position: sticky;
