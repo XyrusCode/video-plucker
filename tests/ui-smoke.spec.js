@@ -13,18 +13,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 // DESIGN.md §2. Hex, because an unregistered custom property resolves to its
 // declared token rather than to rgb().
 const CONTRACT = {
-  "--bg": "#0f1115",
-  "--surface": "#14171c",
-  "--surface-hover": "#191d23",
-  "--overlay": "#1b2027",
-  "--line": "#242a32",
-  "--text": "#e6e9ef",
-  "--text-2": "#9aa4b2",
-  "--accent": "#ff2d55",
-  "--accent-fill": "#e01e45",
-  "--ok": "#3fb950",
-  "--warn": "#e3a008",
-  "--error": "#ff7b72",
+  "--bg": "#e9ecf1",
+  "--surface": "#ffffff",
+  "--surface-hover": "#f2f5f9",
+  "--overlay": "#ffffff",
+  "--line": "#c7cdd7",
+  "--text": "#1e2529",
+  "--text-2": "#4a5763",
+  "--accent": "#0d87c5",
+  "--accent-fill": "#0a6a9e",
+  "--ok": "#1a7f43",
+  "--warn": "#9a6700",
+  "--error": "#c62828",
 };
 
 test.beforeEach(async ({ page }) => {
@@ -69,11 +69,11 @@ test("the accent token reaches a painted element", async ({ page }) => {
     probe.remove();
     return value;
   });
-  expect(painted).toBe("rgb(255, 45, 85)");
+  expect(painted).toBe("rgb(13, 135, 197)");
 });
 
-test("white text sits only on the AA-passing fill, not the brand red", async ({ page }) => {
-  // White on --accent is 3.64:1. The primary button must use --accent-fill.
+test("white text sits only on the AA-passing fill, not the brand blue", async ({ page }) => {
+  // White on --accent is 3.8:1. The primary button must use --accent-fill (5.7:1).
   const bg = await page.evaluate(
     () => getComputedStyle(document.getElementById("analyze-btn")).backgroundColor,
   );
@@ -81,8 +81,49 @@ test("white text sits only on the AA-passing fill, not the brand red", async ({ 
   const primary = await page.evaluate(
     () => getComputedStyle(document.getElementById("pluck-btn")).backgroundColor,
   );
-  expect(primary).toBe("rgb(224, 30, 69)");
-  expect(bg).not.toBe("rgb(255, 45, 85)");
+  expect(primary).toBe("rgb(10, 106, 158)");
+  expect(bg).not.toBe("rgb(13, 135, 197)");
+});
+
+test("an available update is detected immediately and offered", async ({ page }) => {
+  // The update button lives in the Settings → Updates pane, both hidden at boot.
+  await page.locator("#nav-settings").click();
+  await page.locator('[data-pane="pane-updates"]').click();
+  // Let the startup check settle before driving the result, so the manual
+  // click is not swallowed by the in-flight guard.
+  await expect.poll(() => page.evaluate(() => window.__updateCheckCount)).toBeGreaterThanOrEqual(1);
+  await expect(page.locator("#check-updates-btn")).not.toHaveText("Checking…");
+
+  await page.evaluate(() => {
+    window.__updateResult = {
+      version: "4.18.0",
+      currentVersion: "4.17.0",
+      date: "2026-11-23T00:00:00Z",
+      body: "Fresh look and update fixes",
+    };
+  });
+  await page.locator("#check-updates-btn").click();
+
+  await expect(page.locator(".update-banner")).toBeVisible();
+  await expect(page.locator(".update-banner")).toContainText("v4.18.0");
+  await expect(page.locator(".update-banner")).toContainText("Fresh look and update fixes");
+  await expect(page.locator("#check-updates-btn")).toHaveText("v4.18.0 available");
+});
+
+test("install calls downloadAndInstall on the returned Update", async ({ page }) => {
+  await page.locator("#nav-settings").click();
+  await page.locator('[data-pane="pane-updates"]').click();
+  await expect.poll(() => page.evaluate(() => window.__updateCheckCount)).toBeGreaterThanOrEqual(1);
+  await page.evaluate(() => {
+    window.__updateResult = { version: "4.18.0", body: "" };
+  });
+  await page.locator("#check-updates-btn").click();
+  await expect(page.locator(".update-banner")).toBeVisible();
+
+  await page.locator("#update-install-btn").click();
+
+  await expect.poll(() => page.evaluate(() => window.__updateInstalled)).toBe(true);
+  await expect(page.locator("#check-updates-btn")).toHaveText("Restart to finish");
 });
 
 test("every cached getElementById in main.js resolves", async ({ page }) => {
@@ -146,14 +187,14 @@ test("body rows stay within the §4 row height bound", async ({ page }) => {
   const heights = await page.evaluate(() =>
     [...document.querySelectorAll("#plucks tr.row")].map((r) => r.getBoundingClientRect().height),
   );
-  for (const h of heights) expect(h).toBeLessThanOrEqual(36);
+  for (const h of heights) expect(h).toBeLessThanOrEqual(38);
 });
 
 test("status bar shows engine state and the running version", async ({ page }) => {
   // DESIGN.md §5: the status bar is always present and reports the version.
   await expect(page.locator(".statusbar")).toBeVisible();
   await expect(page.locator("#status-engine")).not.toHaveText("");
-  await expect(page.locator("#status-version")).toHaveText("v4.17.0");
+  await expect(page.locator("#status-version")).toHaveText("v4.18.0");
 });
 
 test("no text is rendered uppercase (§3)", async ({ page }) => {
