@@ -36,8 +36,17 @@ idiom that has no desktop counterpart. In a desktop window they read as a web
 page pretending to be an application, which is what users reported.
 
 Rules that survived from the previous contract, because they were never the
-problem: the accent is `#FF2D55`, one accent is enough for the whole app, and a
-failure is never rendered in the accent colour.
+problem: one accent is enough for the whole app, and a failure is never rendered
+in the accent colour.
+
+**Why 4.18.0 adopts the Zorin visual language.** The 4.17.0 shell was a dark,
+desaturated "instrument": correct for reading a table, but visually unrelated to
+the rest of the product's desktop identity. Zorin OS publishes a clear palette —
+deep navy `#123354`, bright sky `#22c5fd`, pale ice `#bde6fb`, light grey
+`#e9ecf1`, ink `#1e2529` — with generously rounded controls and 150ms
+transitions. This contract takes that palette and shape language and keeps the
+desktop structure that 4.9.0 established: rail, tables, status bar, no cards
+around rows. The layout is still an instrument; only its finishes are Zorin.
 
 ---
 
@@ -46,12 +55,14 @@ failure is never rendered in the accent colour.
 1. **Instrument, not document.** The user is looking at something that changes
    on its own. Everything on screen is either a control, a navigation item, or a
    reading. Nothing decorates.
-2. **One accent, four jobs.** The accent marks what is active, what is primary,
+2. **One accent, four jobs.** Deep sky marks what is active, what is primary,
    where the keyboard focus is, and how far along a download is. It is never
-   used for a heading, a border, a fill on a row, or decoration.
-3. **Boxes carry grouping, not depth.** A 1px hairline separates. A surface
-   changes tone. There are no shadows except on things that float above the
-   window (the modal and the overflow menu).
+   used for a heading, a border, a fill on a row, or decoration. Navy and ice are
+   the rail's ground and label colours, not a second accent.
+3. **Light ground, quiet depth.** The content area is Zorin light grey, panels
+   are white, and the rail and title bar are navy. A 1px hairline separates.
+   There are no shadows except on things that float above the window (the modal,
+   the overflow menu and the update banner).
 4. **Words over shapes.** A status is a word in a fixed column. A download's
    type is its filename, not a coloured tile. Never encode one thing twice.
 5. **Everything is reachable by keyboard.** The whole app is operable without a
@@ -61,40 +72,45 @@ failure is never rendered in the accent colour.
 
 ## 2. Colour
 
-Restrained strategy: a four-step neutral ramp with one accent. The app sits open
-all day beside other windows on a desktop, so the ground is dark and desaturated
-and the accent is the only saturated thing on screen.
+The Zorin OS palette, applied to a desktop instrument. The content ground is
+light, the navigation is navy, and the deep-sky accent is the only saturated
+thing in the content area.
 
 | Token | Value | Used for |
 |---|---|---|
-| `--bg` | `#0F1115` | The content area behind everything |
-| `--surface` | `#14171C` | Rail, title bar, status bar, modal base |
-| `--surface-hover` | `#191D23` | Row hover, input fill, menu base |
-| `--overlay` | `#1B2027` | Modal and overflow menu |
-| `--line` | `#242A32` | Hairlines, table dividers, input borders |
-| `--line-strong` | `#303845` | Dividers that need more separation |
-| `--text` | `#E6E9EF` | Primary text |
-| `--text-2` | `#9AA4B2` | Secondary text, table heads, placeholders |
-| `--text-3` | `#7C8794` | Meta, timestamps, disabled labels |
-| `--accent` | `#FF2D55` | Active rail marker, focus ring, progress fill, active tab underline |
-| `--accent-fill` | `#E01E45` | Primary button background, and nothing else |
-| `--accent-soft` | `rgba(255, 45, 85, 0.12)` | Active rail row fill, selected chip |
-| `--ok` | `#3FB950` | Completed |
-| `--warn` | `#E3A008` | Paused, queued, partial |
-| `--error` | `#FF7B72` | Failed, and failure text the user must read |
+| `--navy` | `#123354` | Rail and title bar ground |
+| `--navy-hover` | `#1B4776` | Rail and window-control hover |
+| `--sky` | `#22C5FD` | Active rail marker and brand logo |
+| `--blue` | `#15A6F0` | Zorin blue, reserved for illustration |
+| `--accent` / `--blue-deep` | `#0D87C5` | Active tab underline, focus ring, progress fill |
+| `--accent-fill` | `#0A6A9E` | Primary button background, and nothing else |
+| `--accent-hover` | `#08567F` | Primary button hover, still AA for white text |
+| `--accent-soft` | `rgba(13, 135, 197, 0.12)` | Focus halo and selected tint |
+| `--bg` | `#E9ECF1` | Content area behind everything |
+| `--surface` | `#FFFFFF` | Panels, status bar, modal base |
+| `--surface-hover` | `#F2F5F9` | Row hover, input fill, menu base |
+| `--overlay` | `#FFFFFF` | Modal and overflow menu |
+| `--line` | `#C7CDD7` | Hairlines, table dividers, input borders |
+| `--line-strong` | `#AAB5C2` | Dividers that need more separation |
+| `--text` | `#1E2529` | Primary text |
+| `--text-2` | `#4A5763` | Secondary text, table heads, placeholders |
+| `--text-3` | `#64707C` | Meta, timestamps, disabled labels |
+| `--ok` | `#1A7F43` | Completed |
+| `--warn` | `#9A6700` | Paused, queued, partial |
+| `--error` | `#C62828` | Failed, and failure text the user must read |
 
-### Why there are two reds
+### Why there are two blues
 
-White text on `--accent` is 3.64:1 and fails WCAG AA for body text. White on
-`--accent-fill` is 4.73:1 and passes. So `--accent` stays the exact brand red
-and carries marks that are not text (the rail marker, the progress fill, the
-focus ring), while `--accent-fill` is the only value white text ever sits on.
+White text on `--accent` is 3.8:1 and fails WCAG AA for body text. White on
+`--accent-fill` is 5.7:1 and passes. So `--accent` stays the exact Zorin
+deep-sky value and carries marks that are not text (the tab underline, the
+progress fill, the focus ring), while `--accent-fill` is a darkened Zorin blue
+and is the only value white text ever sits on.
 
-`--error` is a third red, lighter and more orange than the accent. It is
-reserved for failure text so a failure never reads as a button. Destructive
-buttons are `--accent-fill` like any other primary, because a destructive
-action in this app (clear finished, delete a cookie set, dismiss a row) is an
-ordinary small action, not an alarm.
+`--error` is a darker red reserved for failure text so a failure never reads as
+a button. Destructive buttons are `--accent-fill` like any other primary,
+because a destructive action in this app (clear finished, delete a cookie set,
+dismiss a row) is an ordinary small action, not an alarm.
 
 **No colour is used without a word beside it.** Status is always the word plus
 the colour, never the colour alone.
@@ -134,13 +150,13 @@ four rows visible without scrolling.
 
 | Token | Value | Used for |
 |---|---|---|
-| `--h-titlebar` | 38px | Title bar height |
-| `--h-rail-item` | 30px | Rail item height |
-| `--h-table-head` | 28px | Table header row |
-| `--h-row` | 34px | Table body rows |
-| `--h-statusbar` | 26px | Status bar |
-| `--w-rail` | 208px | Rail width |
-| `--w-rail-collapsed` | 56px | Rail width below 880px |
+| `--h-titlebar` | 40px | Title bar height |
+| `--h-rail-item` | 36px | Rail item height |
+| `--h-table-head` | 32px | Table header row |
+| `--h-row` | 38px | Table body rows |
+| `--h-statusbar` | 28px | Status bar |
+| `--w-rail` | 216px | Rail width |
+| `--w-rail-collapsed` | 60px | Rail width below 880px |
 | `--space-1` / `--space-2` / `--space-3` / `--space-4` | 4 / 8 / 12 / 16px | General rhythm |
 | `--space-6` / `--space-8` | 24 / 32px | Between blocks |
 
@@ -148,9 +164,13 @@ Radii by size class, never by taste:
 
 | Token | Value | Used for |
 |---|---|---|
-| `--radius-input` | 4px | Inputs, selects, buttons |
-| `--radius-panel` | 6px | Menus, banners |
-| `--radius-modal` | 12px | The terms modal |
+| `--radius-input` | 10px | Inputs, selects, buttons |
+| `--radius-panel` | 16px | Menus, banners |
+| `--radius-modal` | 20px | The terms modal |
+
+**Rounded, not pill-shaped.** Zorin's 10px control and 16px panel radii are used
+throughout; the larger modal radius is the only 20px. These are generous but
+they are not fully round, so a table row is still a row.
 
 **Pills are for small controls only.** Rail items, table rows, settings groups
 and section labels are not pills. There is no pill navigation.
@@ -166,42 +186,43 @@ blur. A border under a wide shadow is the ghost card and is banned.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ ▣ Video Plucker                                        − □ ×   │ 38
+│ ▣ Video Plucker                                        − □ ×   │ 40
 ├──────────┬────────────────────────────────────────────────────┤
 │ Pluck    │  Downloads                         Clear finished  │
-│ Queue    │  Name          Format  Size    Progress   Status    │ 28
+│ Queue    │  Name          Format  Size    Progress   Status    │ 32
 │ Saved    │  ─────────────────────────────────────────────────  │ hairline
-│ Search   │  A Video       1080p   642 MB  ▓▓▓▓░░░    Plucking │ 34
+│ Search   │  A Video       1080p   642 MB  ▓▓▓▓░░░    Plucking │ 38
 │ Settings │                                                    │
 ├──────────┴────────────────────────────────────────────────────┤
-│ ● Ready   2 active · 4.1 MB/s    C:\Users\me\Videos    v4.9.0  │ 26
+│ ● Ready   2 active · 4.1 MB/s    C:\Users\me\Videos    v4.9.0  │ 28
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### Title bar (`38px`)
+### Title bar (`40px`)
 
-Brand mark and wordmark on the left, window controls on the right. On Windows
-the whole bar is a drag region and carries minimise, maximise and close. On
-macOS and Linux the window keeps its native decorations and this bar shows the
-brand only, because removing the macOS traffic lights costs the user the
-double-click-to-maximise gesture and the standard close behaviour for no gain.
+Brand mark and wordmark on the left, window controls on the right, both in white
+and pale ice on Zorin navy. On Windows the whole bar is a drag region and carries
+minimise, maximise and close. On macOS and Linux the window keeps its native
+decorations and this bar shows the brand only, because removing the macOS
+traffic lights costs the user the double-click-to-maximise gesture and the
+standard close behaviour for no gain.
 
 The title bar is not a toolbar. There are no app actions in it. An app that
 puts actions in its title bar is a web page in a window.
 
-### Rail (`208px`, collapsing to `56px` below 880px`)
+### Rail (`216px`, collapsing to `60px` below 880px`)
 
 Six destinations, icon and label, in the order they are used: Pluck, Queue, Saved, History, Search, Settings. Active item:
-`--surface-hover` fill, a 2px `--accent` bar on the leading edge, `--text`
-label. Inactive: `--text-2`, no fill. The icon rail below 880px is the same
-six items with the label hidden and the icon centred; there is no separate
-code path, only a width and a media query.
+white label, a sky-tinted fill and a 2px `--sky` bar on the leading edge.
+Inactive: pale ice label, no fill. Hover: white label on `--navy-hover`. The
+icon rail below 880px is the same six items with the label hidden and the icon
+centred; there is no separate code path, only a width and a media query.
 
 The rail is collapsed rather than hidden because the app has six destinations,
 not fifty. Losing the labels at the app's minimum width is a real loss; it is
 the right trade, and the icons carry tooltips via `title`.
 
-### Status bar (`26px`)
+### Status bar (`28px`)
 
 The signature move and the one part of this contract that no mobile counterpart
 has. Four readings, left to right:
@@ -230,8 +251,8 @@ that repeats the title is a label with no information in it.
 
 Downloads and Queue are tables. Not cards, not a list of rounded panels.
 
-- A sticky table head (`28px`, `--text-2`, `11px/600`) with the column names.
-- Body rows `34px`, separated by `--line` hairlines, no fill, no radius.
+- A sticky table head (`32px`, `--text-2`, `11px/600`) with the column names.
+- Body rows `38px`, separated by `--line` hairlines, no fill, no radius.
 - Hover raises the row to `--surface-hover`.
 - A row carries: name, format, size, progress, status, actions. Every column is
   a field the app actually has. Do not add a column that is not in the payload.
@@ -245,7 +266,7 @@ Downloads and Queue are tables. Not cards, not a list of rounded panels.
 ### 6.3 The overflow menu
 
 A `…` button opens a positioned menu: `--overlay` fill, `--line` border, the one
-real shadow in the app, 6px radius. It closes on outside click and on `Escape`.
+real shadow in the app, 10px radius. It closes on outside click and on `Escape`.
 The Popover API is not used; it is unreliable on older WKWebView, and this app
 ships a `.dmg`.
 
@@ -317,18 +338,18 @@ Every control ships all of: default, hover, focus-visible, active, disabled.
 
 | Control | Treatment |
 |---|---|
-| Primary | `--accent-fill` fill, white `12px/600`, 4px radius, 28px tall |
+| Primary | `--accent-fill` fill, white `12px/600`, 10px radius, 32px tall |
 | Secondary | `--surface-hover` fill, `--line` border, `--text` label |
 | Quiet | transparent fill, `--text-2` label, `--surface-hover` on hover |
 | Destructive | as quiet, but the label and its hover go to `--error` |
-| Input / select | `--surface-hover` fill, `--line` border, 4px radius, 28px tall, `--accent` focus ring at 3px |
+| Input / select | `--surface-hover` fill, `--line` border, 10px radius, 32px tall, `--accent` focus ring at 3px |
 | Toggle | 38x22 track, `--accent` when on, `--line-strong` when off, white thumb |
 | Table row action | 24px square, transparent, `--text-2`, `--surface-hover` on hover |
 
 Icon buttons are drawn SVG at a single stroke weight. **No Unicode glyphs as
 icons.** `▸`, `✕` and `←` are banned in this document; 4.8.0 shipped all three.
 
-Press feedback is `transform: scale(0.98)` on `:active`, 120ms. Buttons do not
+Press feedback is `transform: scale(0.98)` on `:active`, 150ms. Buttons do not
 scale on hover, because a mouse-driven hover that moves geometry reads as a
 mis-click.
 
@@ -336,12 +357,13 @@ mis-click.
 
 ## 8. Motion
 
-120ms for colour, 160ms for transform, both `cubic-bezier(0.2, 0, 0, 1)`.
-Exponential ease-out, starting from an already-visible default, so nothing
-arrives late and nothing is hidden by its own animation.
+150ms for both colour and transform, with `cubic-bezier(0.4, 0, 0.2, 1)`.
+Zorin's 150ms is quick enough to feel immediate and slow enough to read as a
+state change, starting from an already-visible default so nothing arrives late
+and nothing is hidden by its own animation.
 
 There is one authored moment: the row overflow menu, which fades and lifts 4px
-over 160ms. Everything else is a colour or opacity change. There is no
+over 150ms. Everything else is a colour or opacity change. There is no
 page-load choreography, no staggered entrance, and nothing animates that does
 not report a state change.
 
@@ -356,7 +378,7 @@ The parts of the window the app did not draw still carry the design:
 
 - Text selection is `--accent-soft` on `--text`.
 - The caret is `--accent`.
-- Scrollbars are 10px, `--line` track, `--line-strong` thumb.
+- Scrollbars are 10px, transparent track, `--line-strong` thumb, `--text-3` on hover.
 - Focus is a 3px `--accent-soft` ring with a 1px `--accent` inner edge, visible
   on every focusable element.
 - Tabular numerals everywhere a number ticks.
@@ -404,7 +426,9 @@ Each of these shipped in 4.8.0 or earlier and is removed. Do not reintroduce.
 `tests/ui-smoke.spec.js` asserts what can be read off a rendered page: the
 tokens in section 2, one active rail item, a table head on every table view, the
 status bar carrying the version, no computed `uppercase`, no gradient on any
-button, and a row height within the section 4 bound.
+button, and a row height within the section 4 bound. It also drives the updater
+stub end to end, so a returned Tauri v2 `Update` must surface the banner and
+install through that object — the 4.17.0 v1-shape regression is pinned here.
 
 A screenshot catches what looks wrong. A token assertion catches what drifted.
 Both run on every PR, through `npm install && npx playwright test`, against a

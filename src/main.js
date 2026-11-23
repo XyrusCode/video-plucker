@@ -2894,19 +2894,29 @@ discordBtn.addEventListener("click", () => {
 
 /* ---------- updater ---------- */
 
-const AUTO_UPDATE_KEY = "auto-update";
 const autoUpdateCheck = document.getElementById("auto-update-check");
 const checkUpdatesBtn = document.getElementById("check-updates-btn");
 
+// Tauri v2's check() resolves to an Update object or null. The old v1 shape
+// ({ shouldUpdate, manifest }) made every available update read as "up to
+// date", so hold on to the returned object — install lives on it.
 let updater = null;
-let updateChecked = false;
+let availableUpdate = null;
+let updateCheckInFlight = false;
+let lastUpdateCheckAt = 0;
+const UPDATE_RECHECK_MS = 60_000;
 
-// Tauri v2 exposes updater via window.__TAURI__.updater
 function getUpdater() {
   if (!updater && window.__TAURI__?.updater) {
     updater = window.__TAURI__.updater;
   }
   return updater;
+}
+
+function setCheckButton(text, disabled = false) {
+  if (!checkUpdatesBtn) return;
+  checkUpdatesBtn.textContent = text;
+  checkUpdatesBtn.disabled = disabled;
 }
 
 async function initUpdater() {
@@ -2930,12 +2940,24 @@ function showUpdateBanner(version, body) {
   const banner = document.createElement("div");
   banner.className = "update-banner";
   banner.innerHTML = `
-    <span>Video Plucker <strong>v${version}</strong> is available.</span>
+    <div class="update-banner-copy">
+      <strong></strong>
+      <p class="update-banner-notes"></p>
+    </div>
     <div class="update-actions">
       <button id="update-install-btn" class="primary">Download &amp; Install</button>
       <button id="update-dismiss-btn" class="quiet">Dismiss</button>
     </div>
   `;
+
+  // Release notes are external data; never splice them into markup.
+  banner.querySelector("strong").textContent = `Video Plucker v${version} is available`;
+  const notes = banner.querySelector(".update-banner-notes");
+  if (body) {
+    notes.textContent = body;
+  } else {
+    notes.remove();
+  }
   document.body.appendChild(banner);
 
   banner.querySelector("#update-install-btn").addEventListener("click", async () => {
@@ -2949,60 +2971,78 @@ function showUpdateBanner(version, body) {
 }
 
 async function installUpdate() {
-  const u = getUpdater();
-  if (!u) return;
+  if (!availableUpdate) {
+    // Only possible after a reload; re-check rather than failing silently.
+    await checkForUpdates({ force: true });
+  }
+  const update = availableUpdate;
+  if (!update) return;
 
-  checkUpdatesBtn.disabled = true;
-  checkUpdatesBtn.textContent = "Installing…";
+  setCheckButton("Installing…", true);
 
   try {
-    await u.downloadAndInstall();
-    // The app will restart after install
+    await update.downloadAndInstall();
+    availableUpdate = null;
+    setCheckButton("Restart to finish", false);
   } catch (err) {
-    checkUpdatesBtn.disabled = false;
-    checkUpdatesBtn.textContent = "Check for Updates";
     console.error("Update install failed:", err);
+    setCheckButton("Install failed", false);
+    setTimeout(() => setCheckButton("Check for updates", false), 3000);
   }
 }
 
-async function checkForUpdates({ silent = false } = {}) {
+async function checkForUpdates({ silent = false, force = false } = {}) {
   const u = getUpdater();
-  if (!u) return;
+  if (!u || updateCheckInFlight) return;
 
-  checkUpdatesBtn.disabled = true;
-  checkUpdatesBtn.textContent = "Checking…";
+  const now = Date.now();
+  if (!force && now - lastUpdateCheckAt < UPDATE_RECHECK_MS) return;
+  lastUpdateCheckAt = now;
+  updateCheckInFlight = true;
+  setCheckButton("Checking…", true);
 
   try {
-    const result = await u.check();
-    updateChecked = true;
+    const update = await u.check();
 
-    if (result?.shouldUpdate) {
-      showUpdateBanner(result.manifest?.version || "new", result.manifest?.body || "");
-    } else if (!silent) {
-      checkUpdatesBtn.textContent = "Up to date";
-      setTimeout(() => {
-        checkUpdatesBtn.textContent = "Check for Updates";
-      }, 2000);
+    if (update) {
+      availableUpdate = update;
+      showUpdateBanner(update.version || "new", update.body || "");
+      setCheckButton(`v${update.version} available`, false);
+    } else {
+      availableUpdate = null;
+      if (!silent) {
+        setCheckButton("Up to date", false);
+        setTimeout(() => setCheckButton("Check for updates", false), 2000);
+      } else {
+        setCheckButton("Check for updates", false);
+      }
     }
   } catch (err) {
-    updateChecked = false;
-    if (!silent) {
-      checkUpdatesBtn.textContent = "Check failed";
-      setTimeout(() => {
-        checkUpdatesBtn.disabled = false;
-        checkUpdatesBtn.textContent = "Check for Updates";
-      }, 3000);
-    }
     console.error("Update check failed:", err);
+    if (!silent) {
+      setCheckButton("Check failed", false);
+      setTimeout(() => setCheckButton("Check for updates", false), 3000);
+    } else {
+      setCheckButton("Check for updates", false);
+    }
   } finally {
-    if (checkUpdatesBtn.textContent === "Checking…") {
-      checkUpdatesBtn.disabled = false;
-      checkUpdatesBtn.textContent = "Check for Updates";
+    updateCheckInFlight = false;
+    if (checkUpdatesBtn?.textContent === "Checking…") {
+      setCheckButton("Check for updates", false);
     }
   }
 }
 
-checkUpdatesBtn.addEventListener("click", () => checkForUpdates({ silent: false }));
+checkUpdatesBtn.addEventListener("click", () => checkForUpdates({ force: true }));
+
+// A window that spent time in the background can miss the startup check.
+// Recheck when it becomes visible again, throttled so focus flicker cannot
+// hammer the release endpoint.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && autoUpdateCheck.checked) {
+    checkForUpdates();
+  }
+});
 
 /* ---------- init ---------- */
 
@@ -3016,8 +3056,9 @@ initSettings()
   .then(async () => {
     await initUpdater();
 
-    // Auto-check for updates on startup if enabled
-    if (autoUpdateCheck.checked && getUpdater()) {
+    // Auto-check for updates on startup if enabled. A silent check still
+    // surfaces the banner when an Update comes back.
+    if (autoUpdateCheck.checked) {
       checkForUpdates({ silent: true });
     }
 

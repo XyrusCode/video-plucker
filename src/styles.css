@@ -12,35 +12,44 @@
 
 :root {
   /* --- §2 Colour -------------------------------------------------- */
-  --bg: #0f1115;
-  --surface: #14171c;
-  --surface-hover: #191d23;
-  --overlay: #1b2027;
-  --line: #242a32;
-  --line-strong: #303845;
-  --text: #e6e9ef;
-  --text-2: #9aa4b2;
-  --text-3: #7c8794;
+  /* Zorin OS visual language: deep navy, bright sky, pale ice and light
+     grey. Values below are taken from the Zorin site's published palette. */
+  --navy: #123354;
+  --navy-hover: #1b4776;
+  --sky: #22c5fd;
+  --blue: #15a6f0;
+  --blue-deep: #0d87c5;
 
-  /* Two reds on purpose. --accent is the exact brand value and carries
-     marks that are not text; white on it is 3.64:1 and fails AA. White
-     text only ever sits on --accent-fill, which is 4.73:1. */
-  --accent: #ff2d55;
-  --accent-fill: #e01e45;
-  --accent-soft: rgba(255, 45, 85, 0.12);
+  --bg: #e9ecf1;
+  --surface: #ffffff;
+  --surface-hover: #f2f5f9;
+  --overlay: #ffffff;
+  --line: #c7cdd7;
+  --line-strong: #aab5c2;
+  --text: #1e2529;
+  --text-2: #4a5763;
+  --text-3: #64707c;
 
-  --ok: #3fb950;
-  --warn: #e3a008;
-  --error: #ff7b72;
+  /* Two blues on purpose. --accent is the exact Zorin deep-sky value and
+     carries marks that are not text; white on it is 3.8:1 and fails AA.
+     White text only ever sits on --accent-fill, which is 5.7:1. */
+  --accent: #0d87c5;
+  --accent-fill: #0a6a9e;
+  --accent-hover: #08567f;
+  --accent-soft: rgba(13, 135, 197, 0.12);
+
+  --ok: #1a7f43;
+  --warn: #9a6700;
+  --error: #c62828;
 
   /* --- §4 Space and shape ------------------------------------------ */
-  --h-titlebar: 38px;
-  --h-rail-item: 30px;
-  --h-table-head: 28px;
-  --h-row: 34px;
-  --h-statusbar: 26px;
-  --w-rail: 208px;
-  --w-rail-collapsed: 56px;
+  --h-titlebar: 40px;
+  --h-rail-item: 36px;
+  --h-table-head: 32px;
+  --h-row: 38px;
+  --h-statusbar: 28px;
+  --w-rail: 216px;
+  --w-rail-collapsed: 60px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -49,24 +58,25 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  --radius-input: 4px;
-  --radius-panel: 6px;
-  --radius-modal: 12px;
+  /* Zorin's rounded controls: 10px on inputs, 16px on panels. */
+  --radius-input: 10px;
+  --radius-panel: 16px;
+  --radius-modal: 20px;
 
-  --control-h: 28px;
+  --control-h: 32px;
 
   /* --- §8 Motion ---------------------------------------------------- */
-  --dur-color: 120ms;
-  --dur-transform: 160ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-color: 150ms;
+  --dur-transform: 150ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* The two things that genuinely float above the window (§4). */
-  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 12px 32px rgba(18, 51, 84, 0.18), 0 2px 8px rgba(18, 51, 84, 0.12);
 
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 
   font-size: 14px;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -113,8 +123,8 @@ body {
   align-items: center;
   justify-content: space-between;
   padding-left: var(--space-3);
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  background: var(--navy);
+  border-bottom: 1px solid var(--navy-hover);
   -webkit-user-select: none;
   user-select: none;
 }
@@ -140,11 +150,12 @@ body[data-chrome="native"] .titlebar {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  color: #ffffff;
 }
 
 .titlebar-logo {
   display: flex;
-  color: var(--accent);
+  color: var(--sky);
 }
 
 .titlebar-logo svg {
@@ -164,7 +175,7 @@ body[data-chrome="native"] .titlebar {
   width: 46px;
   height: 100%;
   padding: 0;
-  color: var(--text-2);
+  color: #bde6fb;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -174,13 +185,13 @@ body[data-chrome="native"] .titlebar {
 }
 
 .winbtn:hover {
-  color: var(--text);
-  background: var(--surface-hover);
+  color: #ffffff;
+  background: var(--navy-hover);
 }
 
 .winbtn.close:hover {
-  color: #fff;
-  background: #c42b1c;
+  color: #ffffff;
+  background: var(--error);
 }
 
 .winbtn svg {
@@ -197,8 +208,8 @@ body[data-chrome="native"] .titlebar {
   gap: 2px;
   width: var(--w-rail);
   padding: var(--space-2) var(--space-2) var(--space-3);
-  background: var(--surface);
-  border-right: 1px solid var(--line);
+  background: var(--navy);
+  border-right: 1px solid var(--navy-hover);
   overflow: hidden auto;
   transition: width var(--dur-color) var(--ease);
 }
@@ -212,7 +223,7 @@ body[data-chrome="native"] .titlebar {
   height: var(--h-rail-item);
   padding: 0 var(--space-2);
   font-size: 13px;
-  color: var(--text-2);
+  color: #bde6fb;
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
@@ -225,17 +236,17 @@ body[data-chrome="native"] .titlebar {
 }
 
 .rail-item:hover {
-  color: var(--text);
-  background: var(--surface-hover);
+  color: #ffffff;
+  background: var(--navy-hover);
 }
 
-/* Active destination: a filled row with the accent bar on the leading
+/* Active destination: a sky-tinted row with a bright sky bar on the leading
    edge. 2px is the one place a coloured border above 1px is allowed,
    because it is the selection indicator and not a container edge. */
 .rail-item.active {
-  color: var(--text);
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
+  color: #ffffff;
+  background: rgba(34, 197, 253, 0.16);
+  border-left-color: var(--sky);
 }
 
 .rail-item svg {
@@ -252,8 +263,8 @@ body[data-chrome="native"] .titlebar {
   margin-left: auto;
   padding: 0 5px;
   font-size: 11px;
-  color: var(--text-2);
-  background: var(--surface-hover);
+  color: #bde6fb;
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 8px;
 }
 
@@ -989,8 +1000,8 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.quiet {
@@ -1578,20 +1589,49 @@ input[type="checkbox"] {
 
 .update-banner {
   position: fixed;
-  top: var(--space-3);
+  top: var(--space-4);
   right: var(--space-6);
   z-index: 950;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  max-width: 420px;
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-4);
+  max-width: 460px;
+  padding: var(--space-3) var(--space-4);
   font-size: 12px;
   color: var(--text);
   background: var(--overlay);
   border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-float);
+}
+
+.update-banner-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.update-banner-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.update-banner-notes {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 5.8em;
+  overflow: hidden;
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 /* =====================================================================
@@ -1631,7 +1671,7 @@ input[type="checkbox"] {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d4653;
+  background: var(--text-3);
 }
 
 /* =====================================================================

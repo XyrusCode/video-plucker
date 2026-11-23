@@ -4,6 +4,25 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.0] - 2026-11-23
+
+### Added
+- **A Zorin-inspired desktop look.** The shell now uses Zorin OS's published visual
+  language: a deep-navy rail and title bar with a bright-sky active marker, light
+  grey content on white panels, 10px control and 16px panel radii, and 150ms
+  transitions. The desktop layout — rail, tables, status bar — is unchanged.
+- **A categorized Linux start-menu entry.** The `.deb` declares the `Video`
+  category, so its desktop entry is filed under `AudioVideo;Video;` and launchers
+  list it beside the other video apps. Deep-link URL handling is preserved.
+
+### Fixed
+- **Updates are detected immediately.** The updater used the Tauri v1 response
+  shape (`shouldUpdate` / `manifest`), so an available release read as "up to
+  date" and no banner ever appeared. It now uses the Tauri v2 `Update` object
+  returned by `check()`, installs through that object, and rechecks when the
+  window becomes visible again. The updater permission is now granted in the
+  window capability, so the API is reachable in the first place.
+
 ## [4.17.0] - <PII type="DATE" id="13"/>
 
 ### Added

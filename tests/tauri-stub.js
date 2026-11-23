@@ -6,6 +6,12 @@
 // The store stub is backed by a Map with the subset of tauri-plugin-store's API
 // the app actually calls: load/get/set/delete/entries, plus autoSave.
 
+// Updater test seams. A test sets __updateResult to a Tauri v2 Update-shaped
+// object to drive the "an update is available" path end to end.
+window.__updateResult = null;
+window.__updateInstalled = false;
+window.__updateCheckCount = 0;
+
 function makeStore(seed) {
   const data = new Map(Object.entries(seed ?? {}));
   return {
@@ -120,7 +126,7 @@ window.__TAURI__ = {
             { id: "allanime", label: "AllAnime", available: false },
           ];
         case "get_app_version":
-          return "4.17.0";
+          return "4.18.0";
         case "consume_deep_link":
           // No deep link pending in a test session.
           return null;
@@ -337,9 +343,19 @@ window.__TAURI__ = {
       return "4.9.0";
     },
   },
+  // Tauri v2 updater: check() resolves to an Update object or null, and
+  // downloadAndInstall() lives on the returned Update — not on the plugin.
   updater: {
     async check() {
-      return { shouldUpdate: false };
+      window.__updateCheckCount += 1;
+      const result = window.__updateResult ?? null;
+      if (!result) return null;
+      return {
+        ...result,
+        async downloadAndInstall() {
+          window.__updateInstalled = true;
+        },
+      };
     },
   },
   // The frameless window API. Recorded so a test can assert that the custom
