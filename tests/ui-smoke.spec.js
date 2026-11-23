@@ -86,6 +86,9 @@ test("white text sits only on the AA-passing fill, not the brand blue", async ({
 });
 
 test("an available update is detected immediately and offered", async ({ page }) => {
+  // The update button lives in the Settings → Updates pane, both hidden at boot.
+  await page.locator("#nav-settings").click();
+  await page.locator('[data-pane="pane-updates"]').click();
   // Let the startup check settle before driving the result, so the manual
   // click is not swallowed by the in-flight guard.
   await expect.poll(() => page.evaluate(() => window.__updateCheckCount)).toBeGreaterThanOrEqual(1);
@@ -108,6 +111,8 @@ test("an available update is detected immediately and offered", async ({ page })
 });
 
 test("install calls downloadAndInstall on the returned Update", async ({ page }) => {
+  await page.locator("#nav-settings").click();
+  await page.locator('[data-pane="pane-updates"]').click();
   await expect.poll(() => page.evaluate(() => window.__updateCheckCount)).toBeGreaterThanOrEqual(1);
   await page.evaluate(() => {
     window.__updateResult = { version: "4.18.0", body: "" };
