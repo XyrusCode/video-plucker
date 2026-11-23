@@ -1,3 +1,19 @@
+
+// ---- Theme ----
+const THEME_KEY = "vp.themeMode";
+function applyThemeMode(mode) {
+  const m = mode === "night-owl" ? "night-owl" : "default";
+  document.documentElement.dataset.theme = m;
+  try { localStorage.setItem(THEME_KEY, m); } catch {}
+  const sel = document.getElementById("theme-mode-select");
+  if (sel) sel.value = m;
+}
+function initThemeMode() {
+  let mode = "default";
+  try { mode = localStorage.getItem(THEME_KEY) || "default"; } catch {}
+  applyThemeMode(mode);
+  document.getElementById("theme-mode-select")?.addEventListener("change", (e) => applyThemeMode(e.target.value));
+}
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { open, save, ask } = window.__TAURI__.dialog;
@@ -3200,3 +3216,4 @@ if (applyChrome()) {
   currentWindow()?.onResized?.(syncMaximize);
   syncMaximize();
 }
+initThemeMode();
