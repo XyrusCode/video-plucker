@@ -101,20 +101,23 @@ impl Extractor for HiAnime {
         // return a clear unavailable error if the flow can't be completed.
         let servers_url = format!("{BASE}/ajax/v2/episode/servers?episodeId={}", ep.episode_id);
         let servers_json = self.get_json(&servers_url).await?;
-        let servers_html = servers_json.get("html").and_then(|v| v.as_str()).unwrap_or("");
-        let doc = Html::parse_document(servers_html);
-        let server_sel = sel(".server-item[data-type][data-id]");
-        let preferred_type = if ep.translation == "dub" { "dub" } else { "sub" };
-        let mut chosen: Option<(String, String)> = None; // (type, id)
-        let mut fallback: Option<(String, String)> = None;
-        for s in doc.select(&server_sel) {
-            let t = s.value().attr("data-type").unwrap_or("").to_string();
-            let sid = s.value().attr("data-id").unwrap_or("").to_string();
-            if sid.is_empty() { continue; }
-            if t == preferred_type { chosen = Some((t, sid)); break; }
-            if fallback.is_none() { fallback = Some((t, sid)); }
-        }
-        let (_, sid) = chosen.or(fallback).ok_or_else(|| ExtractError::Unavailable("No HiAnime server found for episode".into()))?;
+        let servers_html = servers_json.get("html").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let sid = {
+            let doc = Html::parse_document(&servers_html);
+            let server_sel = sel(".server-item[data-type][data-id]");
+            let preferred_type = if ep.translation == "dub" { "dub" } else { "sub" };
+            let mut chosen: Option<(String, String)> = None; // (type, id)
+            let mut fallback: Option<(String, String)> = None;
+            for s in doc.select(&server_sel) {
+                let t = s.value().attr("data-type").unwrap_or("").to_string();
+                let sid = s.value().attr("data-id").unwrap_or("").to_string();
+                if sid.is_empty() { continue; }
+                if t == preferred_type { chosen = Some((t, sid)); break; }
+                if fallback.is_none() { fallback = Some((t, sid)); }
+            }
+            chosen.or(fallback).map(|(_, sid)| sid)
+        };
+        let sid = sid.ok_or_else(|| ExtractError::Unavailable("No HiAnime server found for episode".into()))?;
         let source_url = format!("{BASE}/ajax/v2/episode/sources?id={sid}");
         let src_json = self.get_json(&source_url).await?;
         let link = src_json.get("link").and_then(|v| v.as_str()).ok_or_else(|| ExtractError::Unavailable("HiAnime source link missing".into()))?;
