@@ -897,12 +897,6 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
                     .font(type_::TITLE)
                     .color(t.text),
             )
-            .child(
-                text(if s.busy.is_empty() { s.engine.clone() } else { s.busy.clone() })
-                    .key("busy")
-                    .font(type_::LABEL)
-                    .color(t.text_secondary),
-            ),
     );
 
     let mut body = row().key("body").grow(1.0).min_h(0.0);
@@ -974,7 +968,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
                     .gap(space::S2)
                     .center_y()
                     .child(el().key("engine-dot").size(7.0, 7.0).radius(4.0).fill(accent()))
-                    .child(text(s.engine.clone()).font(type_::LABEL).color(t.text_secondary)),
+                    .child(text(if s.busy.is_empty() { s.engine.clone() } else { s.busy.clone() }).font(type_::LABEL).color(t.text_secondary)),
             )
             .child(text(format!("{active} active · {}", s.settings.dest_dir)).font(type_::LABEL).color(t.text_secondary))
             .child(text(env!("CARGO_PKG_VERSION")).font(type_::LABEL).color(t.text_secondary)),
@@ -1745,17 +1739,22 @@ pub fn shutdown() {
     }
 }
 
+fn seen_terms(s: &mut AppState) {
+    s.settings.terms_accepted = true;
+    s.terms_open = false;
+}
+
 pub fn spec() -> AppSpec<AppState> {
     let mut spec = AppSpec::<AppState> {
         scenes: &[
-            ("pluck", |_| {}),
-            ("queue", |s| s.screen = Screen::Queue),
-            ("history", |s| s.screen = Screen::History),
-            ("saved", |s| s.screen = Screen::Saved),
-            ("search", |s| s.screen = Screen::Search),
-            ("settings", |s| s.screen = Screen::Settings),
+            ("pluck", |s| seen_terms(s)),
+            ("queue", |s| { seen_terms(s); s.screen = Screen::Queue; }),
+            ("history", |s| { seen_terms(s); s.screen = Screen::History; }),
+            ("saved", |s| { seen_terms(s); s.screen = Screen::Saved; }),
+            ("search", |s| { seen_terms(s); s.screen = Screen::Search; }),
+            ("settings", |s| { seen_terms(s); s.screen = Screen::Settings; }),
             ("terms", |s| s.terms_open = true),
-            ("night-owl", |s| s.settings.theme_mode = "dark".into()),
+            ("night-owl", |s| { seen_terms(s); s.settings.theme_mode = "dark".into(); }),
         ],
         ..AppSpec::new("Video Plucker", (920.0, 680.0), || unreachable!(), view)
     };
