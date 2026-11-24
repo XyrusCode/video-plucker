@@ -4,6 +4,15 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.1] - 2026-11-24
+
+### Fixed
+- Upgrades from 5.x now keep their settings: the Rune app reads the flat
+  Tauri store format again and no longer resets config when new keys are absent.
+- Saved plucks and the queue stored as keyed objects by 5.x are restored.
+- The History screen loads `history.json` on launch instead of showing an empty
+  list until the next download finishes.
+
 ## [6.0.0] - 2026-11-24
 
 ### Changed

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub dest_dir: String,
     pub quality: String,
@@ -66,10 +66,15 @@ fn path(name: &str) -> PathBuf {
 
 /// Read a JSON array store. Missing or corrupt files are empty stores.
 pub fn load_records(name: &str) -> Vec<serde_json::Value> {
-    std::fs::read_to_string(path(name))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(&s).ok())
-        .unwrap_or_default()
+    let Ok(text) = std::fs::read_to_string(path(name)) else {
+        return Vec::new();
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Array(items)) => items,
+        // Tauri's store plugin wrote objects keyed by record id; 6.x writes arrays.
+        Ok(serde_json::Value::Object(map)) => map.into_values().collect(),
+        _ => Vec::new(),
+    }
 }
 
 pub fn save_records(name: &str, records: &[serde_json::Value]) -> Result<(), String> {
