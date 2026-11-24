@@ -4,19 +4,19 @@
 
 ## Platform
 
-web
+native desktop
 
-The frontend is HTML, CSS and JavaScript rendered in a native window (Tauri v2).
-Recorded as `web` because that is the technology; the target is a desktop
-application window, never a browser page and never a phone. Nothing in the
-interface may assume a mobile viewport, a touch target, or a narrow column.
+The interface is a native GPU-rendered window built with Rune. The target is a
+desktop application window, never a browser page and never a phone. Nothing in
+the interface may assume a mobile viewport, a touch target, or a narrow column.
 
 ## Stack
 
-Tauri v2. Rust backend, vanilla HTML/CSS/JS frontend, no build step, no bundler,
-no framework, no npm dependency in the shipped app. yt-dlp and ffmpeg run as
-bundled sidecar binaries. The Playwright harness in `tests/` is test-only and is
-not bundled into the binary.
+Rune plus `rune-kit`: a native Rust UI framework with its own renderer, text,
+layout and springs. No webview, no HTML/CSS/JS, no npm dependency and no frontend
+build step. The download engine, extractors, ledger and backups are plain Rust;
+yt-dlp and ffmpeg run as bundled sidecars next to the executable. UI changes are
+verified by Rune's headless PNG/tree snapshots in CI.
 
 ## Users
 
@@ -114,8 +114,9 @@ Undecided: AllAnime's replacement extractor is scoped but not implemented.
 
 - Name: Video Plucker. "Pluck" is the product's verb and appears in the app.
 - Logo mark: a rounded square holding a play triangle. It is the brand.
-- Accent: `#FF2D55`. Confirmed by the user as the single accent for the desktop
-  app, kept from the Android app so the two products stay recognisably related.
+- Accent: sky `#22c5fd` on deep navy `#123354`, per `DESIGN.md`, which is the
+  canonical source for desktop visuals. The older `#FF2D55` red was never
+  adopted by the shipped Zorin-inspired look and is retired.
 - Binding visual references, named by the user: Docker Desktop (the one they
   singled out), IObit Uninstaller, and MiniTool Partition Wizard.
 - The user rejected the previous direction explicitly: mirroring the Android
@@ -127,8 +128,8 @@ Undecided: AllAnime's replacement extractor is scoped but not implemented.
 
 ## Evidence on Hand
 
-- Real app: `src/index.html`, `src/styles.css`, `src/main.js`, Rust in
-  `src-tauri/src/`.
+- Real app: Rust in `src-tauri/src/`, with `ui.rs` (views/state/actions),
+  `compat.rs` (process/event shim), `engine.rs`, `extractors/` and the ledger.
 - Screenshots of the incumbent: `docs/ui/pluck-before.png` and the other
   `docs/ui/*-before.png` files, plus `docs/analyze.png` and `docs/playlist.png`.
 - Committed before/after pairs from the 4.8.0 restyle, shot through the same

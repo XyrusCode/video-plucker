@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_shell::process::CommandEvent;
+use crate::compat::{AppHandle, Emitter, Manager};
+use crate::compat::process::CommandEvent;
 
 use crate::engine;
 use crate::errors::{self, FailureKind};
@@ -34,12 +34,10 @@ pub struct EpisodeSel {
     pub title: Option<String>,
 }
 
-#[tauri::command]
 pub async fn list_sites() -> Vec<SiteInfo> {
     extractors::searchable_sites()
 }
 
-#[tauri::command]
 pub async fn search_content(
     site: String,
     query: String,
@@ -51,7 +49,6 @@ pub async fn search_content(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub async fn get_series_detail(
     site: String,
     id: String,
@@ -63,7 +60,6 @@ pub async fn get_series_detail(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub async fn resolve_streams(
     site: String,
     show_id: String,
@@ -82,7 +78,6 @@ pub async fn resolve_streams(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub async fn start_stream_pluck(
     app: AppHandle,
     job_id: u64,
@@ -108,7 +103,7 @@ pub async fn start_stream_pluck(
     );
 
     let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::compat::async_runtime::spawn(async move {
         run_stream_batch(
             app2,
             job_id,

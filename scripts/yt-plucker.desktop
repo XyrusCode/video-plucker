@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Video Plucker
+Comment=Turn video links into files on your device
+Exec=yt-plucker %u
+Icon=yt-plucker
+Terminal=false
+Categories=Utility;AudioVideo;
+MimeType=x-scheme-handler/yt-plucker;

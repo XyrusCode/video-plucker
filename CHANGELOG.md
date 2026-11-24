@@ -4,6 +4,27 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2026-11-24
+
+### Changed
+- **The desktop UI is now native.** Tauri and the HTML/CSS/JS frontend are
+  replaced by Rune, a GPU-rendered Rust UI framework. The app no longer ships a
+  webview, a JavaScript runtime or any npm dependency.
+- **All six screens survive the move:** Pluck, Queue, Saved, History, Search
+  and Settings, along with the tray, first-run terms, update banner and the Zorin
+  visual language from 4.18.0.
+- **Packaging is framework-independent.** Windows NSIS, macOS DMG and Linux DEB
+  installers bundle yt-dlp, ffmpeg and the cookie-unlock plugin, and register
+  the `yt-plucker://` scheme themselves. The in-app updater verifies a SHA-256
+  checksum from `latest.json` and launches the platform installer.
+- The download engine, extractors, ledger, history, version-3 backups and the
+  `yt-plucker://` protocol are unchanged, so the browser extension and the
+  Kotlin Android app keep working.
+
+### Verified
+- `cargo check`, the Rust unit tests and headless Rune snapshots for every
+  screen run on every pull request in CI.
+
 ## [4.18.0] - 2026-11-23
 
 ### Added

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use crate::compat::{AppHandle, Manager};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,18 +208,15 @@ pub fn record_file(app: &AppHandle, file_path: &Path, platform: &str) {
     let _ = save(app, &merged);
 }
 
-#[tauri::command]
 pub fn ledger_entries(app: AppHandle) -> Vec<LedgerEntry> {
     load(&app)
 }
 
-#[tauri::command]
 pub fn ledger_record(app: AppHandle, entry: LedgerEntry) -> Result<(), String> {
     let merged = merge(&load(&app), std::slice::from_ref(&entry));
     save(&app, &merged)
 }
 
-#[tauri::command]
 pub fn find_duplicate(app: AppHandle, id: String, dest_dir: String) -> Option<DuplicateMatch> {
     let names = file_names_in(Path::new(&dest_dir));
     match_duplicate(&id, &load(&app), &names)

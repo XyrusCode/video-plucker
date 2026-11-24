@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use crate::compat::{AppHandle, Manager};
 
 /// Oldest entries beyond this are dropped on every save.
 pub const MAX_ENTRIES: usize = 1000;
@@ -128,19 +128,16 @@ pub fn outcome_entry(
     }
 }
 
-#[tauri::command]
 pub fn history_entries(app: AppHandle) -> Vec<HistoryEntry> {
     load(&app)
 }
 
-#[tauri::command]
 pub fn history_remove(app: AppHandle, id: String) -> Result<(), String> {
     let entries = load(&app);
     let kept: Vec<HistoryEntry> = entries.into_iter().filter(|e| e.id != id).collect();
     save(&app, &kept)
 }
 
-#[tauri::command]
 pub fn history_clear(app: AppHandle) -> Result<(), String> {
     save(&app, &[])
 }

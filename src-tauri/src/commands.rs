@@ -4,9 +4,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::async_runtime::Receiver;
-use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use crate::compat::process::{CommandChild, CommandEvent};
+use crate::compat::{AppHandle, Emitter, Manager, Receiver, State};
 
 use crate::engine;
 use crate::errors::{self, FailureKind};
@@ -156,7 +155,6 @@ fn cookies_file_for_url(app: &AppHandle, url: &str) -> Option<String> {
 }
 
 /// Import a cookies.txt file under a user-chosen name (e.g. "insta").
-#[tauri::command]
 pub fn import_cookie(app: AppHandle, name: String, source_path: String) -> Result<String, String> {
     let name = sanitize_cookie_name(&name)?;
     let dest = pluck::app_cookies_dir(&app).join(format!("{name}.txt"));
@@ -166,7 +164,6 @@ pub fn import_cookie(app: AppHandle, name: String, source_path: String) -> Resul
 }
 
 /// Remove a stored cookies.txt by profile name.
-#[tauri::command]
 pub fn delete_cookie(app: AppHandle, name: String) -> Result<(), String> {
     let name = sanitize_cookie_name(&name)?;
     let path = pluck::app_cookies_dir(&app).join(format!("{name}.txt"));
@@ -177,7 +174,6 @@ pub fn delete_cookie(app: AppHandle, name: String) -> Result<(), String> {
 }
 
 /// List all stored cookie profiles (name + saved file path).
-#[tauri::command]
 pub fn list_cookies(app: AppHandle) -> Vec<CookieEntry> {
     let dir = pluck::app_cookies_dir(&app);
     let mut out = Vec::new();
@@ -328,7 +324,6 @@ mod tests {
     }
 }
 
-#[tauri::command]
 pub async fn fetch_metadata(
     app: AppHandle,
     url: String,
@@ -451,10 +446,9 @@ pub async fn fetch_metadata(
     }
 }
 
-#[tauri::command]
 pub async fn start_pluck(
     app: AppHandle,
-    state: State<'_, PluckState>,
+    state: State<PluckState>,
     job_id: u64,
     url: String,
     quality: String,
@@ -515,7 +509,7 @@ pub async fn start_pluck(
 
     let app_handle = app.clone();
     let archive_task = archive.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::compat::async_runtime::spawn(async move {
         let mut throttle = Throttle::new(Duration::from_millis(150));
         // One engine self-heal per job: on a stale-engine failure, download
         // the current yt-dlp and rerun once. Pause/cancel never self-heal.
@@ -529,7 +523,7 @@ pub async fn start_pluck(
         let mut last_done: Option<String> = None;
 
         // Every run starts yt-dlp the same way, so it is one closure.
-        let start_ytdlp = || -> Result<(Receiver<CommandEvent>, CommandChild), String> {
+        let start_ytdlp = || -> Result<(Receiver, CommandChild), String> {
             engine::ytdlp_command(&app_handle)?
                 .env("PYTHONIOENCODING", "utf-8")
                 .args(args.clone())
@@ -716,8 +710,7 @@ pub async fn start_pluck(
     Ok(())
 }
 
-#[tauri::command]
-pub fn cancel_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), String> {
+pub fn cancel_pluck(state: State<PluckState>, job_id: u64) -> Result<(), String> {
     let jobs = state.0.lock().unwrap();
     let job = jobs.get(&job_id).ok_or("pluck not found")?;
     job.cancelled.store(true, Ordering::SeqCst);
@@ -725,8 +718,7 @@ pub fn cancel_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Str
     Ok(())
 }
 
-#[tauri::command]
-pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), String> {
+pub fn pause_pluck(state: State<PluckState>, job_id: u64) -> Result<(), String> {
     let jobs = state.0.lock().unwrap();
     let job = jobs.get(&job_id).ok_or("pluck not found")?;
     job.paused.store(true, Ordering::SeqCst);
@@ -737,8 +729,7 @@ pub fn pause_pluck(state: State<'_, PluckState>, job_id: u64) -> Result<(), Stri
 /// Delete the contents of `<dest_dir>/.incoming` (the staging directory all
 /// partial files land in). Refuses while any pluck is running, because the
 /// whole point is that nobody's half-finished download is deleted.
-#[tauri::command]
-pub fn clear_temp(state: State<'_, PluckState>, dest_dir: String) -> Result<u64, String> {
+pub fn clear_temp(state: State<PluckState>, dest_dir: String) -> Result<u64, String> {
     {
         let jobs = state.0.lock().unwrap();
         if !jobs.is_empty() {
@@ -770,11 +761,9 @@ pub fn clear_temp(state: State<'_, PluckState>, dest_dir: String) -> Result<u64,
 /// frontend reloads from its stores and needs to know which of its "active"
 /// records still have a live download behind them, so it can reattach to
 /// those instead of offering a Resume that would double-start the job.
-#[tauri::command]
-pub fn list_active_jobs(state: State<'_, PluckState>) -> Vec<u64> {
+pub fn list_active_jobs(state: State<PluckState>) -> Vec<u64> {
     state.0.lock().unwrap().keys().copied().collect()
 }
-#[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }

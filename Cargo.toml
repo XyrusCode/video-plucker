@@ -1,0 +1,17 @@
+# Workspace root. Rune must be pinned to a `dev` revision, and Cargo does not
+# inherit `[patch.crates-io]` from dependencies, so all eight patches Rune
+# needs live here at the same revision as `rune` itself.
+[workspace]
+resolver = "2"
+members = ["src-tauri"]
+default-members = ["src-tauri"]
+
+[patch.crates-io]
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+naga = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+winit = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
+accesskit_atspi_common = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }

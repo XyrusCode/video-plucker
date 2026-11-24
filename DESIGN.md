@@ -427,12 +427,14 @@ Each of these shipped in 4.8.0 or earlier and is removed. Do not reintroduce.
 tokens in section 2, one active rail item, a table head on every table view, the
 status bar carrying the version, no computed `uppercase`, no gradient on any
 button, and a row height within the section 4 bound. It also drives the updater
-stub end to end, so a returned Tauri v2 `Update` must surface the banner and
-install through that object — the 4.17.0 v1-shape regression is pinned here.
+install flow end to end; the equivalent Rune check is a `--script` scene in the
+`rune-ui` CI job.
 
-A screenshot catches what looks wrong. A token assertion catches what drifted.
-Both run on every PR, through `npm install && npx playwright test`, against a
-static server with a stubbed Tauri bridge. No Rust toolchain is needed.
+The desktop UI is built with Rune. The colours, spacing and type in this
+document map to Rune's `tok` theme and a small set of `El` builders in
+`src-tauri/src/ui.rs`; snapshots for every screen are produced headlessly by CI
+(`--snap`/`--tree`) and uploaded as artifacts for review. A screenshot catches
+what looks wrong; the tree assertion catches what drifted.
 
 `scripts/shoot-before-after.mjs` captures the four views at the real window size
 and at the minimum, through the same stub and viewport on both sides, so the

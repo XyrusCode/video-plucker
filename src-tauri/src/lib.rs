@@ -1,25 +1,28 @@
 mod bookmarks;
 mod commands;
+mod compat;
 mod dump;
 mod engine;
 mod errors;
+mod extractors;
 mod history;
 mod ledger;
-mod extractors;
 mod platform;
 mod pluck;
 mod retry;
 mod search_commands;
+mod settings;
 mod sidecar;
-mod tray;
+mod ui;
+mod updater;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
-use url::Url;
+use rune::{App, Titlebar};
+
+use crate::ui::AppState;
 
 pub struct PluckJob {
     pub pid: u32,
@@ -30,211 +33,41 @@ pub struct PluckJob {
 #[derive(Default)]
 pub struct PluckState(pub Mutex<HashMap<u64, PluckJob>>);
 
-#[derive(Clone, Serialize, Deserialize)]
-struct DeepLinkPayload {
-    action: String,
-    url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    quality: Option<String>,
-}
-
-/// Stores a deep-link that arrived before the frontend was ready to listen.
-/// The frontend calls `consume_deep_link` on startup to pick it up.
-#[derive(Default)]
-struct PendingDeepLink(Mutex<Option<DeepLinkPayload>>);
-
-/// Parse argv for yt-plucker:// deep-link URLs and emit a `deep-link-received`
-/// event so the frontend can act on them.  If the frontend hasn't registered a
-/// listener yet (startup race), the payload is stored in PendingDeepLink state.
-fn handle_deep_link_argv(app: &AppHandle, argv: &[String]) {
-    for arg in argv {
-        let trimmed = arg.trim();
-        if !trimmed.starts_with("yt-plucker://") {
-            continue;
-        }
-
-        let parsed = match Url::parse(trimmed) {
-            Ok(u) => u,
-            Err(_) => continue,
-        };
-
-        // Protocol URLs are yt-plucker://analyze?url=...&quality=... (action
-        // in the authority) or yt-plucker:///analyze?... (action in the path);
-        // accept both. The frontend ignores actions it doesn't know.
-        let path_action = parsed.path().trim_start_matches('/');
-        let action = if path_action.is_empty() {
-            parsed.host_str().unwrap_or("")
-        } else {
-            path_action
-        };
-        if action.is_empty() {
-            continue;
-        }
-
-        let mut payload = DeepLinkPayload {
-            action: action.to_string(),
-            url: String::new(),
-            quality: None,
-        };
-
-        for (key, value) in parsed.query_pairs() {
-            match key.as_ref() {
-                "url" => payload.url = value.into_owned(),
-                "quality" => payload.quality = Some(value.into_owned()),
-                _ => {}
-            }
-        }
-
-        if payload.url.is_empty() {
-            continue;
-        }
-
-        show_main_window(app);
-
-        // Try emitting — if the frontend hasn't loaded yet the event is
-        // silently dropped.  Store a copy in PendingDeepLink as a fallback.
-        let _ = app.emit("deep-link-received", payload.clone());
-
-        if let Some(state) = app.try_state::<PendingDeepLink>() {
-            *state.0.lock().unwrap() = Some(payload);
-        }
-    }
-}
-
-#[tauri::command]
-fn consume_deep_link(state: State<PendingDeepLink>) -> Option<DeepLinkPayload> {
-    state.0.lock().unwrap().take()
-}
-
-fn show_main_window(app: &AppHandle) {
-    ensure_main_window(app);
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
-    }
-}
-
-/// Creates the main window if it does not exist.
-///
-/// The window declared in `tauri.conf.json` is only built at boot. Once it has
-/// been destroyed by the tray teardown ([`hide_to_tray`]) it is rebuilt here
-/// with the same geometry, and the frontend reattaches to the jobs that kept
-/// running in the backend.
-fn ensure_main_window(app: &AppHandle) {
-    if app.get_webview_window("main").is_some() {
+pub fn run() {
+    // A second launch hands its arguments to this process over a named pipe
+    // and returns false; without this guard two apps would fight over the
+    // ledger and the download queue.
+    if !rune::single_instance("tech.xyruscode.videoplucker") {
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("Video Plucker")
-        .inner_size(920.0, 680.0)
-        .min_inner_size(700.0, 500.0)
-        .build();
-}
 
-/// Hides the window to the tray and, if it is still hidden after a short
-/// grace period, destroys it. The webview is the app's heaviest idle cost —
-/// a hidden window kept compositing forever — so teardown is the point: the
-/// backend keeps every download running, and the window is rebuilt on demand
-/// (tray click, deep link). The grace period keeps a quick un-hide cheap, and
-/// doubles as the window in which the frontend flushes its stores after the
-/// `pluck://ui-hiding` event.
-fn hide_to_tray(window: &tauri::Window) {
-    let _ = window.hide();
-    // The frontend flushes its stores while the webview is still alive.
-    let _ = window.emit("pluck://ui-hiding", ());
-    let app = window.app_handle().clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        if let Some(w) = app.get_webview_window("main") {
-            if !w.is_visible().unwrap_or(true) {
-                let _ = w.destroy();
-            }
-        }
-    });
-}
+    let rx = compat::init(compat::default_data_dir(), compat::default_resource_dir());
 
-fn kill_all_jobs(app: &AppHandle) {
-    if let Some(state) = app.try_state::<PluckState>() {
-        let jobs = state.0.lock().unwrap();
-        for job in jobs.values() {
-            job.cancelled
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            pluck::kill_tree(job.pid);
+    let mut app = App::new(ui::spec())
+        .titlebar(Titlebar::new(40.0))
+        .keep_running()
+        .on_close(|s: &mut AppState, _| {
+            compat::set_window_visible(false);
+            let _ = settings::save(&s.settings);
+        })
+        .on_open_url(|s: &mut AppState, url: &str, _| {
+            ui::handle_deep_link(s, url);
+        })
+        .init(move || AppState::new(rx));
+
+    let handle = app.handle();
+    ui::attach_tray(&app);
+
+    // Cold start from a yt-plucker:// link: the scheme reaches argv (on
+    // Windows and Linux) rather than on_open_url.
+    for arg in std::env::args() {
+        if arg.starts_with("yt-plucker://") {
+            let link = arg.clone();
+            handle.update(move |s: &mut AppState, _| {
+                ui::handle_deep_link(s, &link);
+            });
         }
     }
-}
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            show_main_window(app);
-            handle_deep_link_argv(app, &argv);
-        }))
-        .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(PluckState::default())
-        .manage(PendingDeepLink::default())
-        .setup(|app| {
-            tray::create_tray(app.handle())?;
-            // A cold launch opened by the yt-plucker:// protocol carries the
-            // URL in its own argv; the single-instance callback below only
-            // fires for a second instance, so scan here too.
-            handle_deep_link_argv(app.handle(), &std::env::args().collect::<Vec<_>>());
-            Ok(())
-        })
-        .on_window_event(|window, event| match event {
-            // X button hides to tray; downloads keep running
-            WindowEvent::CloseRequested { api, .. } => {
-                hide_to_tray(window);
-                api.prevent_close();
-            }
-            // minimize also goes to tray
-            WindowEvent::Resized(_) => {
-                if window.is_minimized().unwrap_or(false) {
-                    hide_to_tray(window);
-                }
-            }
-            _ => {}
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::fetch_metadata,
-            commands::start_pluck,
-            commands::cancel_pluck,
-            commands::pause_pluck,
-            commands::import_cookie,
-            commands::delete_cookie,
-            commands::list_cookies,
-            commands::get_app_version,
-            bookmarks::fetch_saved,
-            bookmarks::list_youtube_lists,
-            dump::export_dump,
-            dump::import_dump,
-            ledger::ledger_entries,
-            ledger::ledger_record,
-            ledger::find_duplicate,
-            history::history_entries,
-            history::history_remove,
-            history::history_clear,
-            commands::clear_temp,
-            search_commands::list_sites,
-            search_commands::search_content,
-            search_commands::get_series_detail,
-            search_commands::resolve_streams,
-            search_commands::start_stream_pluck,
-            commands::list_active_jobs,
-            consume_deep_link
-        ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                kill_all_jobs(app_handle);
-            }
-        });
+    app.run();
 }

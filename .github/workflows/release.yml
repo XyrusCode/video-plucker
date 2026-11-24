@@ -1,17 +1,16 @@
 name: Release
 
-# Releases are driven by the version number: bumping `version` in
-# src-tauri/tauri.conf.json and landing it on main auto-triggers a build and
-# publishes v<version>. The `check` job makes this idempotent — it only
-# releases when no release for that version exists yet, so unrelated edits to
-# the config (or re-runs) never re-release. `workflow_dispatch` allows a manual
-# run for the current version if a release attempt needs to be retried.
+# Version-driven releases. The Rune build has no Tauri bundler, so each
+# matrix leg builds with cargo and assembles its own installer. `check`
+# keeps version numbers single-use; `publish` creates one shared release
+# and a `latest.json` for the in-app updater; `mirror` copies assets to R2.
+
 on:
   push:
     branches:
       - main
     paths:
-      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
   workflow_dispatch:
 
 permissions:
@@ -24,20 +23,15 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       release: ${{ steps.resolve.outputs.release }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Resolve version and whether it needs releasing
         id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version=$(jq -r '.version' src-tauri/tauri.conf.json)
+          version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # A version number is used once, ever. The app was renumbered in
-          # September, so 4.10.0, 4.12.0 and 4.13.0 are already taken by older
-          # releases. Publishing under one of those numbers does not replace
-          # that release, it is skipped, and the change ships with no download.
           highest=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -1)
           if [ -n "$highest" ] && [ "$version" != "$highest" ] && [ "$(printf '%s\n%s\n' "$version" "$highest" | sort -V | tail -1)" = "$highest" ]; then
             echo "::error::Version $version is not above the latest release ($highest). A version number is used once: pick a higher one."
@@ -51,42 +45,28 @@ jobs:
             echo "New version v$version — a release will be built."
           fi
 
-  release:
+  build:
     needs: check
     if: needs.check.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            triple: x86_64-pc-windows-msvc
-            bundles: nsis
-          - platform: macos-15-intel
-            triple: x86_64-apple-darwin
-            bundles: dmg
-          - platform: ubuntu-24.04
-            triple: x86_64-unknown-linux-gnu
-            bundles: deb
-
-    runs-on: ${{ matrix.platform }}
-
+          - os: windows-latest
+            asset: video-plucker_${VERSION}_x64-setup.exe
+          - os: macos-15-intel
+            asset: video-plucker_${VERSION}_x64.dmg
+          - os: ubuntu-24.04
+            asset: video-plucker_${VERSION}_amd64.deb
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev \
-            libssl-dev \
-            libsoup-3.0-dev \
-            patchelf \
-            build-essential
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxkbcommon-x11-0 libvulkan1 vulkan-tools patchelf
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -94,72 +74,141 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+          workspaces: .
 
       - name: Download sidecars (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $bin = "src-tauri/binaries"
-          New-Item -ItemType Directory -Force $bin | Out-Null
-          Invoke-WebRequest `
-            -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
-            -OutFile "$bin/yt-dlp-${{ matrix.triple }}.exe"
-          Invoke-WebRequest `
-            -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip" `
-            -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
+          New-Item -ItemType Directory -Force binaries | Out-Null
+          Invoke-WebRequest "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "binaries/yt-dlp.exe"
+          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip" -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
           Expand-Archive "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg" -Force
-          $ff = (Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
-          Copy-Item $ff "$bin/ffmpeg-${{ matrix.triple }}.exe"
-          Get-ChildItem $bin
+          Copy-Item (Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName "binaries/ffmpeg.exe"
 
       - name: Download sidecars (macOS)
         if: runner.os == 'macOS'
         run: |
-          bin="src-tauri/binaries"
-          mkdir -p "$bin"
-          # yt-dlp: universal macOS binary
-          curl -fL --retry 5 --retry-all-errors \
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
-            -o "$bin/yt-dlp-${{ matrix.triple }}"
-          # ffmpeg: static Intel build. evermeet.cx, the previous source, now returns
-          # 410 Gone for getrelease, which took the whole matrix leg - and with it the R2
-          # mirror job, since mirror needs every leg to succeed - down with it. This is a
-          # GitHub-hosted asset, the same guarantee the Windows and Linux legs rely on, and
-          # it is a bare binary rather than a zip.
-          curl -fL --retry 5 --retry-all-errors \
-            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64" \
-            -o "$bin/ffmpeg-${{ matrix.triple }}"
-          chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
-          ls -la "$bin"
+          mkdir -p binaries
+          curl -fL --retry 5 --retry-all-errors "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o binaries/yt-dlp
+          curl -fL --retry 5 --retry-all-errors "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64" -o binaries/ffmpeg
+          chmod +x binaries/yt-dlp binaries/ffmpeg
 
       - name: Download sidecars (Linux)
         if: runner.os == 'Linux'
         run: |
-          bin="src-tauri/binaries"
-          mkdir -p "$bin"
-          # yt-dlp: x86_64 linux binary
-          curl -fL --retry 5 --retry-all-errors \
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" \
-            -o "$bin/yt-dlp-${{ matrix.triple }}"
-          # ffmpeg: static linux64 build from BtbN (GitHub-hosted, LGPL)
-          curl -fL --retry 5 --retry-all-errors \
-            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-lgpl.tar.xz" \
-            -o "$RUNNER_TEMP/ffmpeg.tar.xz"
+          mkdir -p binaries
+          curl -fL --retry 5 --retry-all-errors "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" -o binaries/yt-dlp
+          curl -fL --retry 5 --retry-all-errors "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-lgpl.tar.xz" -o "$RUNNER_TEMP/ffmpeg.tar.xz"
           mkdir -p "$RUNNER_TEMP/ffmpeg"
           tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg"
-          cp "$(find "$RUNNER_TEMP/ffmpeg" -type f -name ffmpeg | head -1)" "$bin/ffmpeg-${{ matrix.triple }}"
-          chmod +x "$bin/yt-dlp-${{ matrix.triple }}" "$bin/ffmpeg-${{ matrix.triple }}"
-          ls -la "$bin"
+          cp "$(find "$RUNNER_TEMP/ffmpeg" -type f -name ffmpeg | head -1)" binaries/ffmpeg
+          chmod +x binaries/yt-dlp binaries/ffmpeg
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Stage payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/yt-plucker.exe dist/
+            cp binaries/yt-dlp.exe binaries/ffmpeg.exe dist/
+          else
+            cp target/release/yt-plucker dist/
+            cp binaries/yt-dlp binaries/ffmpeg dist/
+          fi
+          cp -R src-tauri/yt-dlp-plugins dist/
+
+      - name: Package (Windows NSIS)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
+          & $makensis "/DVERSION=${{ needs.check.outputs.version }}" "/DBIN=$(Resolve-Path dist)" "/DOUT=video-plucker_${{ needs.check.outputs.version }}_x64-setup.exe" scripts/installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package (macOS dmg)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.check.outputs.version }}"
+          app="dist/Video Plucker.app"
+          mkdir -p "$app/Contents/MacOS"
+          cp target/release/yt-plucker "$app/Contents/MacOS/"
+          cp binaries/yt-dlp binaries/ffmpeg "$app/Contents/MacOS/"
+          cp -R src-tauri/yt-dlp-plugins "$app/Contents/MacOS/"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Video Plucker</string>
+            <key>CFBundleDisplayName</key><string>Video Plucker</string>
+            <key>CFBundleExecutable</key><string>yt-plucker</string>
+            <key>CFBundleIdentifier</key><string>tech.xyruscode.videoplucker</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>CFBundleURLTypes</key><array><dict>
+              <key>CFBundleURLName</key><string>tech.xyruscode.videoplucker</string>
+              <key>CFBundleURLSchemes</key><array><string>yt-plucker</string></array>
+            </dict></array>
+          </dict></plist>
+          EOF
+          codesign --force --deep --sign - "$app"
+          hdiutil create -volname "Video Plucker" -srcfolder "$app" -ov -format UDZO "video-plucker_${version}_x64.dmg"
+
+      - name: Package (Linux deb)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.check.outputs.version }}"
+          root="pkg"
+          mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share/applications"
+          cp target/release/yt-plucker binaries/yt-dlp binaries/ffmpeg "$root/usr/bin/"
+          cp -R src-tauri/yt-dlp-plugins "$root/usr/bin/"
+          cp scripts/yt-plucker.desktop "$root/usr/share/applications/"
+          cat > "$root/DEBIAN/control" <<EOF
+          Package: video-plucker
+          Version: $version
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Prince Shammah <support@xyruscode.com>
+          Description: Video Plucker
+           Download videos from YouTube, X, TikTok and streaming sites.
+          EOF
+          dpkg-deb --build "$root" "video-plucker_${version}_amd64.deb"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: |
+            *.exe
+            *.dmg
+            *.deb
+          if-no-files-found: error
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Extract release notes
         id: notes
-        shell: bash
         run: |
           version="${{ needs.check.outputs.version }}"
           body=$(awk -v v="$version" '
@@ -170,42 +219,52 @@ jobs:
             }
             found { print }
           ' CHANGELOG.md)
-          if [ -z "$body" ]; then
-            body="No release notes available for v$version."
-          fi
+          if [ -z "$body" ]; then body="No release notes available for v$version."; fi
           {
             echo "body<<EOF"
             echo "$body"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+      - name: Build updater manifest
+        id: manifest
+        run: |
+          set -euo pipefail
+          version="${{ needs.check.outputs.version }}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}"
+          win="video-plucker_${version}_x64-setup.exe"
+          mac="video-plucker_${version}_x64.dmg"
+          lin="video-plucker_${version}_amd64.deb"
+          win_sha=$(sha256sum "dist/$win" | cut -d' ' -f1)
+          mac_sha=$(sha256sum "dist/$mac" | cut -d' ' -f1)
+          lin_sha=$(sha256sum "dist/$lin" | cut -d' ' -f1)
+          jq -n \
+            --arg v "$version" --arg base "$base" \
+            --arg win "$win" --arg mac "$mac" --arg lin "$lin" \
+            --arg ws "$win_sha" --arg ms "$mac_sha" --arg ls "$lin_sha" \
+            '{
+              version: $v,
+              notes: "Video Plucker " + $v,
+              platforms: {
+                "windows-x86_64": { signature: "", checksum: $ws, url: ($base + "/" + $win) },
+                "darwin-x86_64":  { signature: "", checksum: $ms, url: ($base + "/" + $mac) },
+                "linux-x86_64":   { signature: "", checksum: $ls, url: ($base + "/" + $lin) }
+              }
+            }' > dist/latest.json
+          echo "wrote dist/latest.json"
+
+      - name: Create GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          # tauri-action creates the git tag and the GitHub release from this
-          # name; every matrix job passes the same tag, so they publish into one
-          # release. The version comes from the check job, not a pushed tag.
-          tagName: v${{ needs.check.outputs.version }}
-          releaseName: "Video Plucker v${{ needs.check.outputs.version }}"
-          releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: false
-          prerelease: false
-          args: --bundles ${{ matrix.bundles }}
-          updaterJsonPreferNsis: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ needs.check.outputs.version }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Video Plucker v${{ needs.check.outputs.version }}" \
+            --notes "${{ steps.notes.outputs.body }}" \
+            dist/*
 
   mirror:
-    needs: [release, check]
-    # Mirror whatever the release job actually produced, even when one matrix leg failed.
-    #
-    # This previously inherited the default `needs` behaviour, so a single failed leg skipped
-    # the mirror entirely: when the macOS sidecar URL went 410, the Windows .exe and the Linux
-    # .deb were built and published to GitHub and then never reached R2 at all, which is the
-    # only place the download page points. A platform that failed still 404s either way; the
-    # platforms that succeeded should not.
+    needs: [publish, check]
     if: always() && needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:

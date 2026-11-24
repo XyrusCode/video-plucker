@@ -1,8 +1,8 @@
 name: Build Check
 
-# Quick compile check on PRs and pushes to feature branches.
-# Builds the Windows target only; sidecar placeholder binaries are needed
-# because tauri_build validates externalBin paths at compile time.
+# Rust compile + unit tests, plus Rune's headless UI verification.
+# The local GNU toolchain is fragile; CI on windows-latest (MSVC) is the only
+# build authority. Never add local cargo steps for verification.
 
 on:
   pull_request:
@@ -20,55 +20,41 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
-
-      - name: Download sidecars
-        shell: pwsh
-        run: |
-          $bin = "src-tauri/binaries"
-          New-Item -ItemType Directory -Force $bin | Out-Null
-          # Placeholder binaries are enough for cargo check — the real ones
-          # are only needed at runtime / release packaging.
-          "PLACEHOLDER" | Out-File -FilePath "$bin/yt-dlp-x86_64-pc-windows-msvc.exe" -Encoding ascii -NoNewline
-          "PLACEHOLDER" | Out-File -FilePath "$bin/ffmpeg-x86_64-pc-windows-msvc.exe" -Encoding ascii -NoNewline
-          Get-ChildItem $bin
+          workspaces: .
 
       - name: Cargo check
-        working-directory: src-tauri
-        run: cargo check
+        run: cargo check --workspace
 
       - name: Cargo test
-        working-directory: src-tauri
-        # The Rust unit tests were never wired into CI, so every one of them had been
-        # dead weight: cookie matching, failure classification and the dump round-trip
-        # would all have failed silently on any PR.
-        run: cargo test
+        run: cargo test --workspace
 
-  ui-smoke:
-    runs-on: ubuntu-latest
+  rune-ui:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          node-version: 22
-          cache: npm
+          workspaces: .
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Render every scene headlessly
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/snapshots | Out-Null
+          $scenes = @("pluck", "queue", "history", "saved", "search", "settings", "terms", "night-owl")
+          foreach ($scene in $scenes) {
+            cargo run --quiet -- --snap "target/snapshots/$scene.png" --tree "target/snapshots/$scene.json" --scene $scene
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Playwright smoke test
-        # Enforces the shared UI contract in DESIGN.md: design tokens, the element ids
-        # main.js dereferences on boot, and that downloads stay inside the Pluck tab.
-        run: npx playwright test
-
-      - name: Upload screenshots
+      - name: Upload snapshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-screenshots
-          path: test-results/
+          name: rune-ui-snapshots
+          path: target/snapshots/
           retention-days: 7
