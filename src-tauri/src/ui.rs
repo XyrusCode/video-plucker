@@ -236,6 +236,7 @@ pub struct AppState {
     pub jobs: Vec<Job>,
     pub queue: Vec<QueueItem>,
     pub history: Vec<Value>,
+    pub history_rows: Vec<Value>,
     pub cookies: Vec<CookieRow>,
     pub cookie_name: TextEdit,
     pub sites: Vec<SiteRow>,
@@ -267,6 +268,10 @@ impl AppState {
     pub fn new(rx: compat::UiReceiver) -> Self {
         let settings = settings::load();
         let history = settings::load_records("plucks.json");
+        let history_rows = crate::history::history_entries(compat::app_handle())
+            .into_iter()
+            .filter_map(|h| serde_json::to_value(h).ok())
+            .collect();
         let queue = settings::load_records("queue.json")
             .iter()
             .filter_map(QueueItem::from_value)
@@ -289,6 +294,7 @@ impl AppState {
             jobs: history.iter().filter_map(|v| from_value(v)).collect(),
             queue,
             history,
+            history_rows,
             cookies,
             cookie_name: TextEdit::new(""),
             sites: crate::extractors::searchable_sites()
@@ -556,7 +562,7 @@ pub fn clear_finished(s: &mut AppState) {
 }
 
 pub fn refresh_history(s: &mut AppState) {
-    s.history = history::history_entries(compat::app_handle())
+    s.history_rows = history::history_entries(compat::app_handle())
         .into_iter()
         .filter_map(|h| serde_json::to_value(h).ok())
         .collect();
@@ -1287,7 +1293,7 @@ fn history_view(s: &AppState, t: tok::Theme) -> El {
     let mut root = col().key("view-history").w_full().grow(1.0).min_h(0.0).gap(space::S3)
         .child(section_title("History", t));
     let mut table = col().key("history-list").gap(1.0);
-    for (i, h) in s.history.iter().enumerate() {
+    for (i, h) in s.history_rows.iter().enumerate() {
         let title = h.get("title").and_then(Value::as_str).unwrap_or("Untitled").to_string();
         let platform = h.get("platform").and_then(Value::as_str).unwrap_or("").to_string();
         let status = h.get("status").and_then(Value::as_str).unwrap_or("").to_string();
@@ -1512,7 +1518,7 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
             root = root.child(button_tx("import-dump", "Import backup…", t, false, import_dump));
         }
         _ => {
-            root = root.child(text("Video Plucker 6.0.0".to_string()).font(type_::TITLE).color(t.text));
+            root = root.child(text("Video Plucker 6.0.1".to_string()).font(type_::TITLE).color(t.text));
             root = root.child(text("A native desktop app for turning video links into files.".to_string()).font(type_::BODY).color(t.text_secondary));
             root = root.child(button("terms", "Terms of Use", t, false, |s: &mut AppState| s.terms_open = true));
         }
@@ -1749,7 +1755,7 @@ pub fn spec() -> AppSpec<AppState> {
         scenes: &[
             ("pluck", |s| seen_terms(s)),
             ("queue", |s| { seen_terms(s); s.screen = Screen::Queue; }),
-            ("history", |s| { seen_terms(s); s.screen = Screen::History; }),
+            ("history", |s| { seen_terms(s); s.screen = Screen::History; refresh_history(s); }),
             ("saved", |s| { seen_terms(s); s.screen = Screen::Saved; }),
             ("search", |s| { seen_terms(s); s.screen = Screen::Search; }),
             ("settings", |s| { seen_terms(s); s.screen = Screen::Settings; }),
