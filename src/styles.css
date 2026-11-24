@@ -1,19 +1,6 @@
-/* =====================================================================
-   Video Plucker desktop.
-
-   DESIGN.md in this repository is the canonical contract. Every value
-   below is quoted from it and the section numbers in the comments map
-   to its sections. If this file and the document disagree, the
-   document wins and this file is the bug.
-
-   Section references look like (§2) for the colour table, (§4) for
-   space and shape, and so on.
-   ===================================================================== */
-
 :root {
   /* --- §2 Colour -------------------------------------------------- */
-  /* Zorin OS visual language: deep navy, bright sky, pale ice and light
-     grey. Values below are taken from the Zorin site's published palette. */
+  /* Default theme: Zorin-inspired light UI. */
   --navy: #123354;
   --navy-hover: #1b4776;
   --sky: #22c5fd;
@@ -30,9 +17,6 @@
   --text-2: #4a5763;
   --text-3: #64707c;
 
-  /* Two blues on purpose. --accent is the exact Zorin deep-sky value and
-     carries marks that are not text; white on it is 3.8:1 and fails AA.
-     White text only ever sits on --accent-fill, which is 5.7:1. */
   --accent: #0d87c5;
   --accent-fill: #0a6a9e;
   --accent-hover: #08567f;
@@ -58,7 +42,6 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* Zorin's rounded controls: 10px on inputs, 16px on panels. */
   --radius-input: 10px;
   --radius-panel: 16px;
   --radius-modal: 20px;
@@ -70,13 +53,57 @@
   --dur-transform: 150ms;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* The two things that genuinely float above the window (§4). */
   --shadow-float: 0 12px 32px rgba(18, 51, 84, 0.18), 0 2px 8px rgba(18, 51, 84, 0.12);
 
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 
   font-size: 14px;
+  --chrome-bg: var(--navy);
+  --chrome-border: #0c2742;
+  --chrome-text: #ffffff;
+  --chrome-muted: #bde6fb;
+  --chrome-hover: var(--navy-hover);
+  --chrome-active: var(--navy-hover);
+  --chrome-accent: var(--sky);
   color-scheme: light;
+}
+
+:root[data-theme="night-owl"] {
+  --navy: #0d1a26;
+  --navy-hover: #152334;
+  --sky: #7ea8fa;
+  --blue: #7ea8fa;
+  --blue-deep: #5f8fe8;
+
+  --bg: #011627;
+  --surface: #0d1a26;
+  --surface-hover: #152334;
+  --overlay: #112233;
+  --line: #1f3347;
+  --line-strong: #2d4760;
+  --text: #d6deeb;
+  --text-2: #9fb3c8;
+  --text-3: #7c91a6;
+
+  --accent: #7ea8fa;
+  --accent-fill: #5f8fe8;
+  --accent-hover: #8cb2ff;
+  --accent-soft: rgba(126, 168, 250, 0.14);
+
+  --ok: #addb67;
+  --warn: #ecc48d;
+  --error: #ef5350;
+  --radius-panel: 12px;
+  --radius-modal: 14px;
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --chrome-bg: #081321;
+  --chrome-border: #1f3347;
+  --chrome-text: #d6deeb;
+  --chrome-muted: #9fb3c8;
+  --chrome-hover: #152334;
+  --chrome-active: rgba(126,168,250,0.14);
+  --chrome-accent: #7ea8fa;
+  color-scheme: dark;
 }
 
 * {
@@ -123,7 +150,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding-left: var(--space-3);
-  background: var(--navy);
+  background: var(--chrome-bg);
   border-bottom: 1px solid var(--navy-hover);
   -webkit-user-select: none;
   user-select: none;
@@ -150,12 +177,12 @@ body[data-chrome="native"] .titlebar {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #ffffff;
+  color: var(--chrome-text);
 }
 
 .titlebar-logo {
   display: flex;
-  color: var(--sky);
+  color: var(--chrome-accent);
 }
 
 .titlebar-logo svg {
@@ -175,7 +202,7 @@ body[data-chrome="native"] .titlebar {
   width: 46px;
   height: 100%;
   padding: 0;
-  color: #bde6fb;
+  color: var(--chrome-muted);
   background: transparent;
   border: none;
   border-radius: 0;
@@ -185,12 +212,12 @@ body[data-chrome="native"] .titlebar {
 }
 
 .winbtn:hover {
-  color: #ffffff;
-  background: var(--navy-hover);
+  color: var(--chrome-text);
+  background: var(--chrome-hover);
 }
 
 .winbtn.close:hover {
-  color: #ffffff;
+  color: var(--text);
   background: var(--error);
 }
 
@@ -208,8 +235,8 @@ body[data-chrome="native"] .titlebar {
   gap: 2px;
   width: var(--w-rail);
   padding: var(--space-2) var(--space-2) var(--space-3);
-  background: var(--navy);
-  border-right: 1px solid var(--navy-hover);
+  background: var(--chrome-bg);
+  border-right: 1px solid var(--chrome-border);
   overflow: hidden auto;
   transition: width var(--dur-color) var(--ease);
 }
@@ -223,7 +250,7 @@ body[data-chrome="native"] .titlebar {
   height: var(--h-rail-item);
   padding: 0 var(--space-2);
   font-size: 13px;
-  color: #bde6fb;
+  color: var(--chrome-muted);
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
@@ -236,7 +263,7 @@ body[data-chrome="native"] .titlebar {
 }
 
 .rail-item:hover {
-  color: #ffffff;
+  color: var(--text);
   background: var(--navy-hover);
 }
 
@@ -244,9 +271,9 @@ body[data-chrome="native"] .titlebar {
    edge. 2px is the one place a coloured border above 1px is allowed,
    because it is the selection indicator and not a container edge. */
 .rail-item.active {
-  color: #ffffff;
+  color: var(--text);
   background: rgba(34, 197, 253, 0.16);
-  border-left-color: var(--sky);
+  border-left-color: var(--accent);
 }
 
 .rail-item svg {
@@ -263,7 +290,7 @@ body[data-chrome="native"] .titlebar {
   margin-left: auto;
   padding: 0 5px;
   font-size: 11px;
-  color: #bde6fb;
+  color: var(--text-2);
   background: rgba(255, 255, 255, 0.12);
   border-radius: 8px;
 }
@@ -296,7 +323,7 @@ body[data-chrome="native"] .titlebar {
   font-size: 11px;
   color: var(--text-3);
   background: var(--surface);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--chrome-border);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -352,7 +379,7 @@ body[data-chrome="native"] .titlebar {
   height: 44px;
   flex-shrink: 0;
   padding: 0 var(--space-6);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--chrome-border);
 }
 
 .view-title {

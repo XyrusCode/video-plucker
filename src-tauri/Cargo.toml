@@ -1,6 +1,6 @@
 [package]
 name = "video-plucker"
-version = "4.18.0"
+version = "5.0.0"
 description = "Video Plucker — download videos from YouTube, X, TikTok, and streaming sites"
 authors = ["Prince Shammah"]
 edition = "2021"

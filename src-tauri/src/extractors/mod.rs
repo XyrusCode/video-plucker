@@ -7,7 +7,11 @@
 //! one site never takes down the others.
 
 pub mod allanime;
+pub mod animecube;
+pub mod animeheaven;
+pub mod animexin;
 pub mod decode;
+pub mod hianime;
 pub mod luciferdonghua;
 pub mod lulacloud;
 
@@ -181,6 +185,10 @@ pub fn client() -> &'static reqwest::Client {
 pub fn get(site: &str) -> Option<Box<dyn Extractor>> {
     match site {
         "allanime" => Some(Box::new(allanime::AllAnime)),
+        "animecube" => Some(Box::new(animecube::AnimeCube)),
+        "animeheaven" => Some(Box::new(animeheaven::AnimeHeaven)),
+        "animexin" => Some(Box::new(animexin::AnimeXin)),
+        "hianime" => Some(Box::new(hianime::HiAnime)),
         "luciferdonghua" => Some(Box::new(luciferdonghua::LuciferDonghua)),
         "lulacloud" => Some(Box::new(lulacloud::LulaCloud)),
         _ => None,
@@ -189,7 +197,14 @@ pub fn get(site: &str) -> Option<Box<dyn Extractor>> {
 
 /// The sites the frontend offers in its search dropdown, in display order.
 pub fn searchable_sites() -> Vec<SiteInfo> {
-    ["allanime", "luciferdonghua"]
+    [
+        "luciferdonghua",
+        "animeheaven",
+        "hianime",
+        "animecube",
+        "animexin",
+        "allanime",
+    ]
         .iter()
         .filter_map(|id| get(id))
         .filter(|e| e.searchable())

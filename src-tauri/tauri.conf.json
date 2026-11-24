@@ -1,70 +1,75 @@
 {
-    "$schema":  "https://schema.tauri.app/config/2",
-    "productName":  "Video Plucker",
-    "mainBinaryName":  "yt-plucker",
-    "version":  "4.18.0",
-    "identifier":  "tech.xyruscode.videoplucker",
-    "build":  {
-                  "frontendDist":  "../src"
-              },
-    "app":  {
-                "withGlobalTauri":  true,
-                "windows":  [
-                                {
-                                    "label":  "main",
-                                    "title":  "Video Plucker",
-                                    "width":  920,
-                                    "height":  680,
-                                    "minWidth":  700,
-                                    "minHeight":  500
-                                }
-                            ],
-                "security":  {
-                                 "csp":  null
-                             }
-            },
-    "plugins":  {
-                    "deep-link":  {
-                                      "desktop":  {
-                                                      "schemes":  [
-                                                                      "yt-plucker"
-                                                                  ]
-                                                  }
-                                  },
-                    "updater":  {
-                                    "endpoints":  [
-                                                      "https://github.com/XyrusCode/video-plucker/releases/latest/download/latest.json"
-                                                  ],
-                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCRURGOEU2MjFDMEI4RQpSV1NPQ3h4aWp0KytCTkNOS0NIVFJQU3lmbWVJTkVCMExRVWhYb2hrbXlyVElzR3ZFcDJlNmR2Qgo=",
-                                    "windows":  {
-                                                    "installMode":  "basicUi"
-                                                }
-                                }
-                },
-    "bundle":  {
-                    "active":  true,
-                   "category":  "Video",
-                   "createUpdaterArtifacts":  true,
-                    "targets":  [
-                                   "nsis"
-                               ],
-"externalBin":  [
-                                       "binaries/yt-dlp",
-                                       "binaries/ffmpeg"
-                                   ],
-                   "resources":  [
-                                     "yt-dlp-plugins/**/*"
-                                 ],
-                   "icon":  [
-                                "icons/32x32.png",
-                                "icons/128x128.png",
-                                "icons/128x128@2x.png",
-                                "icons/icon.ico"
-                            ],
-                   "windows":  {
-                                   "nsis":  {
-                                                "installMode":  "perMachine"
-                                            }
-                               }
-               }
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Video Plucker",
+    "mainBinaryName": "yt-plucker",
+    "version": "5.0.0",
+    "identifier": "tech.xyruscode.videoplucker",
+    "build": {
+        "frontendDist": "../src"
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "windows": [
+            {
+                "label": "main",
+                "title": "Video Plucker",
+                "width": 920,
+                "height": 680,
+                "minWidth": 700,
+                "minHeight": 500
+            }
+        ],
+        "security": {
+            "csp": null
+        }
+    },
+    "plugins": {
+        "deep-link": {
+            "desktop": {
+                "schemes": [
+                    "yt-plucker"
+                ]
+            }
+        },
+        "updater": {
+            "endpoints": [
+                "https://github.com/XyrusCode/video-plucker/releases/latest/download/latest.json"
+            ],
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCRURGOEU2MjFDMEI4RQpSV1NPQ3h4aWp0KytCTkNOS0NIVFJQU3lmbWVJTkVCMExRVWhYb2hrbXlyVElzR3ZFcDJlNmR2Qgo=",
+            "windows": {
+                "installMode": "basicUi"
+            }
+        }
+    },
+    "bundle": {
+        "active": true,
+        "category": "Video",
+        "createUpdaterArtifacts": true,
+        "targets": [
+            "nsis"
+        ],
+        "externalBin": [
+            "binaries/yt-dlp",
+            "binaries/ffmpeg"
+        ],
+        "resources": [
+            "yt-dlp-plugins/**/*"
+        ],
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.ico"
+        ],
+        "linux": {
+            "deb": {
+                "postInstallScript": "scripts/deb-postinst.sh"
+            }
+        },
+        "windows": {
+            "nsis": {
+                "installMode": "perMachine"
+            }
+        }
+    }
 }
