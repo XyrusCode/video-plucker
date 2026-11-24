@@ -126,7 +126,7 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | 1.2.5     | 4.17.0  | Same protocol; history tab, per-source subfolders, download-all, clear temp files |
 | 1.2.5     | 4.18.0  | Same protocol; immediate update detection, categorized Linux entry, Zorin-inspired look |
 | 1.2.5     | 5.0.0   | Same protocol; new UI shell and engine updates |
-| 1.3.0     | 6.0.1   | Same protocol; native Rune UI, installer-based scheme registration |
+| 1.3.0     | 6.0.2   | Same protocol; native Rune UI, installer-based scheme registration |
 
 ## Key Files
 
@@ -141,4 +141,4 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 
 ---
 
-*Last updated: v6.0.1 (Rune UI, installer-based scheme registration; the protocol is unchanged)*
+*Last updated: v6.0.2 (Rune UI, installer-based scheme registration; the protocol is unchanged)*

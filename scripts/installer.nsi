@@ -7,6 +7,8 @@ InstallDir "$LOCALAPPDATA\Programs\Video Plucker"
 InstallDirRegKey HKCU "Software\Video Plucker" "InstallDir"
 RequestExecutionLevel user
 ShowInstDetails show
+Icon "src-tauri\icons\icon.ico"
+UninstallIcon "src-tauri\icons\icon.ico"
 
 Section "Install"
   SetOutPath "$INSTDIR"

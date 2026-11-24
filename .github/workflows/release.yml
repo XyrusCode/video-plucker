@@ -173,9 +173,15 @@ jobs:
           version="${{ needs.check.outputs.version }}"
           root="pkg"
           mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share/applications"
+          mkdir -p "$root/usr/share/icons/hicolor/32x32/apps" \
+                   "$root/usr/share/icons/hicolor/128x128/apps" \
+                   "$root/usr/share/icons/hicolor/256x256@2/apps"
           cp target/release/yt-plucker binaries/yt-dlp binaries/ffmpeg "$root/usr/bin/"
           cp -R src-tauri/yt-dlp-plugins "$root/usr/bin/"
           cp scripts/yt-plucker.desktop "$root/usr/share/applications/"
+          cp src-tauri/icons/32x32.png "$root/usr/share/icons/hicolor/32x32/apps/yt-plucker.png"
+          cp src-tauri/icons/128x128.png "$root/usr/share/icons/hicolor/128x128/apps/yt-plucker.png"
+          cp src-tauri/icons/icon.png "$root/usr/share/icons/hicolor/256x256@2/apps/yt-plucker.png"
           cat > "$root/DEBIAN/control" <<EOF
           Package: video-plucker
           Version: $version
