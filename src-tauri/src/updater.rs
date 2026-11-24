@@ -10,14 +10,14 @@ use std::path::PathBuf;
 
 use base64::Engine as _;
 use minisign_verify::{PublicKey, Signature};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The public key previously shipped in `tauri.conf.json`. It is base64 of a
 /// two-line minisign public-key file; `PublicKey::from_base64` wants the raw
 /// key line, so decode once and keep the line that starts with "RW".
 const PUBKEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCRURGOEU2MjFDMEI4RQpSV1NPQ3h4aWp0KytCTkNOS0NIVFJQU3lmbWVJTkVCMExRVWhYb2hrbXlyVElzR3ZFcDJlNmR2Qgo=";
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlatformAsset {
     #[serde(default)]
     pub signature: String,
@@ -34,7 +34,7 @@ pub struct LatestJson {
     pub platforms: HashMap<String, PlatformAsset>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateInfo {
     pub version: String,
     pub notes: String,

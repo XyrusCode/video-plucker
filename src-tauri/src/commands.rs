@@ -19,16 +19,16 @@ use crate::{PluckJob, PluckState};
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
-    kind: String, // "video" | "playlist"
-    title: String,
-    thumbnail: Option<String>,
-    duration: Option<f64>,
-    heights: Vec<u32>,
-    entry_count: Option<u64>,
-    entries: Vec<String>,
-    source: String, // yt-dlp extractor, e.g. "Youtube", "Twitter"
+    pub kind: String, // "video" | "playlist"
+    pub title: String,
+    pub thumbnail: Option<String>,
+    pub duration: Option<f64>,
+    pub heights: Vec<u32>,
+    pub entry_count: Option<u64>,
+    pub entries: Vec<String>,
+    pub source: String, // yt-dlp extractor, e.g. "Youtube", "Twitter"
     /// yt-dlp video id, for the duplicate check. None for a playlist.
-    id: Option<String>,
+    pub id: Option<String>,
 }
 
 fn extractor_of(v: &Value) -> String {
@@ -51,8 +51,8 @@ fn last_thumbnail(v: &Value) -> Option<String> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CookieEntry {
-    name: String,
-    path: String,
+    pub name: String,
+    pub path: String,
 }
 
 /// Normalize a user-entered cookie profile name into a safe file stem:

@@ -22,12 +22,12 @@ pub struct LedgerEntry {
 }
 
 /// Why a video was judged already downloaded. `source` is `"ledger"` or `"file"`.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateMatch {
     pub title: String,
     pub file_name: String,
-    pub source: &'static str,
+    pub source: String,
     pub downloaded_at: Option<i64>,
 }
 
@@ -72,7 +72,7 @@ pub fn match_duplicate(id: &str, ledger: &[LedgerEntry], file_names: &[String]) 
         return Some(DuplicateMatch {
             title: entry.title.clone(),
             file_name: entry.file_name.clone(),
-            source: "ledger",
+            source: "ledger".to_string(),
             downloaded_at: Some(entry.downloaded_at),
         });
     }
@@ -82,7 +82,7 @@ pub fn match_duplicate(id: &str, ledger: &[LedgerEntry], file_names: &[String]) 
     Some(DuplicateMatch {
         title: title_from_file_name(file),
         file_name: file.clone(),
-        source: "file",
+        source: "file".to_string(),
         downloaded_at: None,
     })
 }

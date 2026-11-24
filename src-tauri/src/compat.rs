@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::task::Waker;
+use rune::Waker;
 
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -24,6 +24,14 @@ use crate::PluckState;
 pub struct UiEvent {
     pub name: String,
     pub payload: serde_json::Value,
+}
+
+pub struct UiReceiver(mpsc::UnboundedReceiver<UiEvent>);
+
+impl UiReceiver {
+    pub fn try_recv(&mut self) -> Result<UiEvent, mpsc::error::TryRecvError> {
+        self.0.try_recv()
+    }
 }
 
 pub struct Backend {
@@ -39,7 +47,7 @@ pub struct Backend {
 static BACKEND: OnceLock<Backend> = OnceLock::new();
 
 /// Install the process-wide backend context. Called once before `App::run`.
-pub fn init(data_dir: PathBuf, resource_dir: PathBuf) -> mpsc::UnboundedReceiver<UiEvent> {
+pub fn init(data_dir: PathBuf, resource_dir: PathBuf) -> UiReceiver {
     let (tx, rx) = mpsc::unbounded_channel();
     BACKEND
         .set(Backend {
@@ -51,7 +59,7 @@ pub fn init(data_dir: PathBuf, resource_dir: PathBuf) -> mpsc::UnboundedReceiver
         })
         .ok()
         .expect("backend already initialised");
-    rx
+    UiReceiver(rx)
 }
 
 pub fn backend() -> &'static Backend {
@@ -68,7 +76,7 @@ pub fn set_waker(waker: Waker) {
 
 pub fn wake() {
     if let Some(waker) = backend().waker.lock().unwrap().as_ref() {
-        waker.wake_by_ref();
+        waker();
     }
 }
 
@@ -273,7 +281,7 @@ pub mod process {
     impl Command {
         pub fn new<P: AsRef<Path>>(path: P) -> Self {
             Self {
-                inner: tokio::process::Command::new(path),
+                inner: tokio::process::Command::new(path.as_ref()),
             }
         }
 
@@ -306,7 +314,7 @@ pub mod process {
                 .map_err(|e| e.to_string())
         }
 
-        pub fn spawn(self) -> Result<(Receiver, CommandChild), String> {
+        pub fn spawn(mut self) -> Result<(Receiver, CommandChild), String> {
             let _guard = super::runtime().enter();
             let mut child = self
                 .inner

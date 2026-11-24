@@ -70,7 +70,7 @@ pub struct Tile {
     pub status: String,
     pub meta: Option<Meta>,
     pub selected: bool,
-    pub dup: Option<crate::ledger::DuplicateMatch>,
+    pub dup: Option<DupView>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -210,6 +210,15 @@ pub struct SiteRow {
     pub name: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DupView {
+    #[serde(default)] pub title: String,
+    #[serde(default)] pub file_name: String,
+    #[serde(default)] pub source: String,
+    pub downloaded_at: Option<i64>,
+}
+
 fn from_value<T: DeserializeOwned>(v: &Value) -> Option<T> {
     serde_json::from_value(v.clone()).ok()
 }
@@ -248,14 +257,14 @@ pub struct AppState {
     pub update: Option<updater::UpdateInfo>,
     pub toast: Option<String>,
     pub busy: String,
-    pub rx: Option<compat::Receiver>,
+    pub rx: Option<compat::UiReceiver>,
     pub engine: String,
 }
 
 const TRANSLATIONS: [&str; 2] = ["sub", "dup"];
 
 impl AppState {
-    pub fn new(rx: compat::Receiver) -> Self {
+    pub fn new(rx: compat::UiReceiver) -> Self {
         let settings = settings::load();
         let history = settings::load_records("plucks.json");
         let queue = settings::load_records("queue.json")
@@ -547,7 +556,10 @@ pub fn clear_finished(s: &mut AppState) {
 }
 
 pub fn refresh_history(s: &mut AppState) {
-    s.history = history::history_entries(compat::app_handle());
+    s.history = history::history_entries(compat::app_handle())
+        .into_iter()
+        .filter_map(|h| serde_json::to_value(h).ok())
+        .collect();
 }
 
 pub fn run_search(s: &mut AppState) {
@@ -644,7 +656,7 @@ pub fn download_selection(s: &mut AppState) {
 
 pub fn load_saved(s: &mut AppState) {
     compat::async_runtime::spawn(async move {
-        match search_commands::list_youtube_lists(compat::app_handle()).await {
+        match crate::bookmarks::list_youtube_lists(compat::app_handle()).await {
             Ok(lists) => emit_ui(
                 "ui://lists",
                 serde_json::to_value(lists).unwrap_or(Value::Null),
@@ -659,7 +671,7 @@ pub fn load_saved(s: &mut AppState) {
     };
     let list = s.youtube_lists.get(s.youtube_list_index).map(|x| x.0.clone());
     compat::async_runtime::spawn(async move {
-        match search_commands::fetch_saved(compat::app_handle(), sites, list).await {
+        match crate::bookmarks::fetch_saved(compat::app_handle(), sites, list).await {
             Ok(snapshot) => emit_ui("ui://saved", serde_json::to_value(snapshot).unwrap_or(Value::Null)),
             Err(e) => emit_ui("ui://saved-error", Value::String(e)),
         }
@@ -875,7 +887,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
             .key("titlebar")
             .h(40.0)
             .w_full()
-            .px(space::S4)
+            .px(space::S3)
             .center_y()
             .justify_between()
             .fill(t.card)
@@ -899,7 +911,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
         .key("rail")
         .w(180.0)
         .h_full()
-        .py(space::S4)
+        .py(space::S3)
         .px(space::S2)
         .gap(space::S1)
         .fill(t.card);
@@ -938,8 +950,8 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
             .key("content")
             .grow(1.0)
             .min_h(0.0)
-            .px(space::S5)
-            .py(space::S4)
+            .px(space::S6)
+            .py(space::S3)
             .gap(space::S3)
             .child(content),
     );
@@ -952,7 +964,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
             .key("statusbar")
             .h(28.0)
             .w_full()
-            .px(space::S4)
+            .px(space::S3)
             .center_y()
             .justify_between()
             .fill(t.card)
@@ -973,7 +985,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
             el()
                 .key("toast")
                 .absolute(0.0, 44.0)
-                .px(space::S4)
+                .px(space::S3)
                 .py(space::S2)
                 .radius(radius::MD)
                 .fill(t.card)
@@ -994,7 +1006,7 @@ fn section_title(title: &str, t: tok::Theme) -> El {
     text(title.to_string()).key("section-title").font(type_::TITLE).color(t.text)
 }
 
-fn button(key: &'static str, label: &str, t: tok::Theme, primary: bool, action: fn(&mut AppState)) -> El {
+fn button(key: &'static str, label: &str, t: tok::Theme, primary: bool, action: impl Fn(&mut AppState) + 'static) -> El {
     el()
         .key(key)
         .role("button")
@@ -1023,11 +1035,11 @@ fn picker(
     current: usize,
     is_open: bool,
     t: tok::Theme,
-    choose: fn(&mut AppState, usize),
+    choose: impl Fn(&mut AppState, usize) + 'static,
 ) -> El {
     let shown = options.get(current).copied().unwrap_or("");
-    let mut col = col().key(key).gap(space::S1);
-    col = col.child(
+    let mut stack = col().key(key).gap(space::S1);
+    stack = stack.child(
         el()
             .key(format!("{key}-trigger"))
             .role("button")
@@ -1069,9 +1081,9 @@ fn picker(
                     .child(text(o).font(type_::LABEL).color(t.text)),
             );
         }
-        col = col.child(list);
+        stack = stack.child(list);
     }
-    col
+    stack
 }
 
 fn accent() -> rune::Color {
@@ -1083,7 +1095,7 @@ fn button_tx(
     label: &str,
     t: tok::Theme,
     primary: bool,
-    action: fn(&mut AppState, &mut Tx),
+    action: impl Fn(&mut AppState, &mut Tx) + 'static,
 ) -> El {
     el()
         .key(key)
@@ -1436,11 +1448,11 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
                 s.settings.quality = QUALITIES[i].to_string(); s.persist_settings();
             }));
             let modes = ["queue", "parallel"];
-            root = root.child(picker("mode", "Download mode", &modes, if s.settings.download_mode == "parallel" { 1 } else { 0 }, s.open_select.as_deref() == Some("mode"), t, |s, i| {
+            root = root.child(picker("mode", "Download mode", &modes, if s.settings.download_mode == "parallel" { 1 } else { 0 }, s.open_select.as_deref() == Some("mode"), t, move |s, i| {
                 s.settings.download_mode = modes[i].to_string(); s.persist_settings();
             }));
             let mut conc = row().key("concurrency").gap(space::S3).center_y()
-                .child(text("Concurrent downloads".into()).font(type_::LABEL).color(t.text));
+                .child(text("Concurrent downloads".to_string()).font(type_::LABEL).color(t.text));
             for n in 1..=8u32 {
                 let active = s.settings.max_concurrent_downloads == n;
                 conc = conc.child(
@@ -1452,7 +1464,7 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
             }
             root = root.child(conc);
             let themes = ["system", "light", "dark"];
-            root = root.child(picker("theme", "Theme", &themes, theme_index(&s.settings.theme_mode), s.open_select.as_deref() == Some("theme"), t, |s, i| {
+            root = root.child(picker("theme", "Theme", &themes, theme_index(&s.settings.theme_mode), s.open_select.as_deref() == Some("theme"), t, move |s, i| {
                 s.settings.theme_mode = themes[i].to_string(); s.persist_settings();
             }));
             root = root.child(button_tx("browse", "Destination…", t, false, browse_destination));
@@ -1471,7 +1483,7 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
                     .h(30.0).px(space::S3).center_y().radius(radius::MD)
                     .fill(if s.settings.auto_update { accent() } else { t.control_off })
                     .on_press(|s: &mut AppState| { s.settings.auto_update = !s.settings.auto_update; s.persist_settings(); })
-                    .child(text(if s.settings.auto_update { "Auto-update: on" } else { "Auto-update: off" }.into()).font(type_::LABEL).color(rune::Color::WHITE)),
+                    .child(text(if s.settings.auto_update { "Auto-update: on" } else { "Auto-update: off" }.to_string()).font(type_::LABEL).color(rune::Color::WHITE)),
             );
             root = root.child(button_tx("check-update", "Check for updates", t, false, check_update));
         }
@@ -1505,8 +1517,8 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
             root = root.child(button_tx("import-dump", "Import backup…", t, false, import_dump));
         }
         _ => {
-            root = root.child(text("Video Plucker 6.0.0".into()).font(type_::TITLE).color(t.text));
-            root = root.child(text("A native desktop app for turning video links into files.".into()).font(type_::BODY).color(t.text_secondary));
+            root = root.child(text("Video Plucker 6.0.0".to_string()).font(type_::TITLE).color(t.text));
+            root = root.child(text("A native desktop app for turning video links into files.".to_string()).font(type_::BODY).color(t.text_secondary));
             root = root.child(button("terms", "Terms of Use", t, false, |s: &mut AppState| s.terms_open = true));
         }
     }
@@ -1619,8 +1631,8 @@ fn terms_dialog(t: tok::Theme) -> El {
                 s.persist_settings();
             }).w(440.0).padding(space::S6).gap(space::S3).fill(t.card).radius(radius::LG)
                 .shadow(8.0, 28.0, t.shadow)
-                .child(text("Terms of Use".into()).font(type_::TITLE).color(t.text))
-                .child(text("Video Plucker downloads videos you choose, to your own device. You are responsible for the content you download and for complying with the terms of the sites you use. Your cookies stay on this device.".into())
+                .child(text("Terms of Use".to_string()).font(type_::TITLE).color(t.text))
+                .child(text("Video Plucker downloads videos you choose, to your own device. You are responsible for the content you download and for complying with the terms of the sites you use. Your cookies stay on this device.".to_string())
                     .font(type_::BODY).color(t.text_secondary).wrap().w_full())
                 .child(button("terms-accept", "Accept", t, true, |s: &mut AppState| {
                     s.settings.terms_accepted = true;
@@ -1632,11 +1644,11 @@ fn terms_dialog(t: tok::Theme) -> El {
 
 fn update_banner(s: &AppState, t: tok::Theme) -> El {
     let version = s.update.as_ref().map(|u| u.version.clone()).unwrap_or_default();
-    el().key("update-banner").absolute(0.0, 44.0).w_full().px(space::S4).py(space::S2)
+    el().key("update-banner").absolute(0.0, 44.0).w_full().px(space::S3).py(space::S2)
         .fill(t.indicator)
         .child(
             row().key("update-row").w_full().gap(space::S3).center_y()
-                .child(text(format!("Version {version} is available").into()).font(type_::LABEL).color(t.text).grow(1.0))
+                .child(text(format!("Version {version} is available").to_string()).font(type_::LABEL).color(t.text).grow(1.0))
                 .child(button_tx("update-install", "Install", t, true, install_update))
                 .child(button("update-later", "Later", t, false, |s: &mut AppState| s.update = None)),
         )
