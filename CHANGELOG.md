@@ -4,6 +4,18 @@ All notable changes to Video Plucker (Desktop) are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.2] - 2026-11-24
+
+### Fixed
+- Upgrades now migrate the 5.x webview localStorage: the old night-owl theme
+  becomes dark and previously accepted terms are honoured, without a first-run
+  prompt or a theme reset.
+- Linux `.deb` packages now ship the app icon at 32, 128, 256 and 256@2 sizes,
+  refresh the desktop/icon caches, and restore the 5.x launcher ID
+  (`video-plucker.desktop`) so pinned dock items keep their icon. The old
+  `yt-plucker.desktop` remains as a hidden scheme-handler alias.
+- The Windows NSIS installer and uninstaller use the app icon.
+
 ## [6.0.1] - 2026-11-24
 
 ### Fixed

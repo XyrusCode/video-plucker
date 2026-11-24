@@ -4,7 +4,7 @@
 //! These are plain JSON files in the same app-data directory, with the same
 //! camelCase keys, so dumps exported by 5.x still round-trip.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +25,9 @@ pub struct Settings {
     /// was localStorage `video-plucker-terms-accepted`
     pub terms_accepted: bool,
     pub last_notified_version: String,
+    /// One-time migration from the 5.x webview's localStorage.
+    #[serde(default)]
+    pub legacy_migrated: bool,
 }
 
 impl Default for Settings {
@@ -40,6 +43,7 @@ impl Default for Settings {
             theme_mode: "system".into(),
             terms_accepted: false,
             last_notified_version: String::new(),
+            legacy_migrated: false,
         }
     }
 }
@@ -87,10 +91,69 @@ pub fn save_records(name: &str, records: &[serde_json::Value]) -> Result<(), Str
 }
 
 pub fn load() -> Settings {
-    std::fs::read_to_string(path("settings.json"))
+    let mut settings = std::fs::read_to_string(path("settings.json"))
         .ok()
         .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if !settings.legacy_migrated {
+        migrate_legacy(&mut settings, &crate::compat::backend().data_dir);
+        settings.legacy_migrated = true;
+        let _ = save(&settings);
+    }
+    settings
+}
+
+/// Tauri kept theme and terms in a webview localStorage LevelDB. Values are
+/// stored as UTF-16LE immediately after the ASCII key; take the last write so
+/// the WAL wins over the main file.
+fn legacy_string(bytes: &[u8], key: &str) -> Option<String> {
+    let needle = key.as_bytes();
+    let mut last = None;
+    for start in 0..bytes.len().saturating_sub(needle.len()) {
+        if &bytes[start..start + needle.len()] != needle {
+            continue;
+        }
+        let mut value = String::new();
+        let mut i = start + needle.len();
+        while i + 1 < bytes.len() {
+            let lo = bytes[i];
+            if bytes[i + 1] == 0 && (lo.is_ascii_graphic() || lo == b' ') {
+                value.push(lo as char);
+                i += 2;
+            } else {
+                break;
+            }
+        }
+        if !value.is_empty() {
+            last = Some(value);
+        }
+    }
+    last
+}
+
+fn migrate_legacy(settings: &mut Settings, data_dir: &Path) {
+    let dir = data_dir.join("localstorage");
+    for name in [
+        "tauri_localhost_0.localstorage",
+        "tauri_localhost_0.localstorage-wal",
+    ] {
+        let Ok(bytes) = std::fs::read(dir.join(name)) else {
+            continue;
+        };
+        if let Some(value) = legacy_string(&bytes, "vp.themeMode") {
+            settings.theme_mode = match value.as_str() {
+                "night-owl" => "dark",
+                "default" => "light",
+                other => other,
+            }
+            .to_string();
+        }
+        if legacy_string(&bytes, "video-plucker-terms-accepted")
+            .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+        {
+            settings.terms_accepted = true;
+        }
+    }
 }
 
 /// Dumps store a few settings under Android's snake_case names. Accept both
@@ -122,4 +185,45 @@ pub fn save(s: &Settings) -> Result<(), String> {
     let tmp = target.with_extension("json.tmp");
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &target).map_err(|e| e.to_string())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn utf16(value: &str) -> Vec<u8> {
+        value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn reads_last_utf16_localstorage_value() {
+        let mut bytes = vec![0; 8];
+        bytes.extend_from_slice(b"vp.themeMode");
+        bytes.extend_from_slice(&utf16("default"));
+        bytes.extend_from_slice(b"vp.themeMode");
+        bytes.extend_from_slice(&utf16("night-owl"));
+        assert_eq!(legacy_string(&bytes, "vp.themeMode").as_deref(), Some("night-owl"));
+        assert_eq!(legacy_string(&bytes, "missing"), None);
+    }
+
+    #[test]
+    fn migrates_legacy_theme_and_terms() {
+        let dir = std::env::temp_dir().join(format!("vp-legacy-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ls = dir.join("localstorage");
+        std::fs::create_dir_all(&ls).unwrap();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"video-plucker-terms-accepted");
+        bytes.extend_from_slice(&utf16("true"));
+        bytes.extend_from_slice(b"vp.themeMode");
+        bytes.extend_from_slice(&utf16("night-owl"));
+        std::fs::write(ls.join("tauri_localhost_0.localstorage-wal"), bytes).unwrap();
+
+        let mut settings = Settings::default();
+        migrate_legacy(&mut settings, &dir);
+        assert_eq!(settings.theme_mode, "dark");
+        assert!(settings.terms_accepted);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

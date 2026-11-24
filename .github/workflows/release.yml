@@ -173,9 +173,21 @@ jobs:
           version="${{ needs.check.outputs.version }}"
           root="pkg"
           mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share/applications"
+          mkdir -p "$root/usr/share/icons/hicolor/32x32/apps" \
+                   "$root/usr/share/icons/hicolor/128x128/apps" \
+                   "$root/usr/share/icons/hicolor/256x256/apps" \
+                   "$root/usr/share/icons/hicolor/256x256@2/apps"
           cp target/release/yt-plucker binaries/yt-dlp binaries/ffmpeg "$root/usr/bin/"
           cp -R src-tauri/yt-dlp-plugins "$root/usr/bin/"
-          cp scripts/yt-plucker.desktop "$root/usr/share/applications/"
+          # 5.x registered the launcher as video-plucker.desktop; keep that ID so
+          # pinned dock items and their icons survive the upgrade. The old
+          # yt-plucker.desktop stays as a hidden scheme-handler alias.
+          cp scripts/yt-plucker.desktop "$root/usr/share/applications/video-plucker.desktop"
+          { cat scripts/yt-plucker.desktop; printf 'NoDisplay=true\n'; } > "$root/usr/share/applications/yt-plucker.desktop"
+          cp src-tauri/icons/32x32.png "$root/usr/share/icons/hicolor/32x32/apps/yt-plucker.png"
+          cp src-tauri/icons/128x128.png "$root/usr/share/icons/hicolor/128x128/apps/yt-plucker.png"
+          cp src-tauri/icons/icon.png "$root/usr/share/icons/hicolor/256x256/apps/yt-plucker.png"
+          cp src-tauri/icons/icon.png "$root/usr/share/icons/hicolor/256x256@2/apps/yt-plucker.png"
           cat > "$root/DEBIAN/control" <<EOF
           Package: video-plucker
           Version: $version
@@ -186,6 +198,17 @@ jobs:
           Description: Video Plucker
            Download videos from YouTube, X, TikTok and streaming sites.
           EOF
+          cat > "$root/DEBIAN/postinst" <<'EOF'
+          #!/bin/sh
+          set -e
+          if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications || true
+          fi
+          if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -q -f -t /usr/share/icons/hicolor || true
+          fi
+          EOF
+          chmod 755 "$root/DEBIAN/postinst"
           dpkg-deb --build "$root" "video-plucker_${version}_amd64.deb"
 
       - name: Upload installer

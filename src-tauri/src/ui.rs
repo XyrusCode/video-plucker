@@ -1518,7 +1518,7 @@ fn settings_view(s: &AppState, t: tok::Theme) -> El {
             root = root.child(button_tx("import-dump", "Import backup…", t, false, import_dump));
         }
         _ => {
-            root = root.child(text("Video Plucker 6.0.1".to_string()).font(type_::TITLE).color(t.text));
+            root = root.child(text("Video Plucker 6.0.2".to_string()).font(type_::TITLE).color(t.text));
             root = root.child(text("A native desktop app for turning video links into files.".to_string()).font(type_::BODY).color(t.text_secondary));
             root = root.child(button("terms", "Terms of Use", t, false, |s: &mut AppState| s.terms_open = true));
         }

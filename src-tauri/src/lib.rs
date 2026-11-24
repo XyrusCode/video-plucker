@@ -17,6 +17,7 @@ mod ui;
 mod updater;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +34,29 @@ pub struct PluckJob {
 #[derive(Default)]
 pub struct PluckState(pub Mutex<HashMap<u64, PluckJob>>);
 
+/// Headless migration self-check used by CI. Set `VP_MIGRATION_REPORT` to a
+/// legacy app-data directory; the app loads it, writes a JSON report and exits
+/// without opening a window.
+fn migration_report(data_dir: PathBuf) {
+    let rx = compat::init(data_dir.clone(), compat::default_resource_dir());
+    let state = ui::AppState::new(rx);
+    let report = serde_json::json!({
+        "settings": serde_json::to_value(&state.settings).unwrap_or(serde_json::Value::Null),
+        "termsOpen": state.terms_open,
+        "history": state.history_rows.len(),
+        "jobs": state.jobs.len(),
+        "queue": state.queue.len(),
+    });
+    let text = serde_json::to_string_pretty(&report).unwrap_or_default();
+    let _ = std::fs::write(data_dir.join("migration-report.json"), text);
+}
+
 pub fn run() {
+    if let Some(data_dir) = std::env::var_os("VP_MIGRATION_REPORT") {
+        migration_report(PathBuf::from(data_dir));
+        return;
+    }
+
     // A second launch hands its arguments to this process over a named pipe
     // and returns false; without this guard two apps would fight over the
     // ledger and the download queue.
