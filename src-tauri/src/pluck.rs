@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::compat::{AppHandle, Emitter, Manager};
 
 use crate::errors::{self, FailureKind};
 use crate::sidecar;

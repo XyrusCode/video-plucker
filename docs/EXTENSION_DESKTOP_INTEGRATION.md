@@ -1,7 +1,7 @@
 # Extension ↔ Desktop Integration Spec
 
 This doc is the source of truth for the protocol between the **browser extension**
-(`Xyrus-YT-Plucker-Extension`) and the **Tauri v2 desktop app** (`video-plucker`).
+(`Xyrus-YT-Plucker-Extension`) and the **Rune desktop app** (`video-plucker`).
 Both repos have a copy — keep them in sync.
 
 ---
@@ -9,7 +9,7 @@ Both repos have a copy — keep them in sync.
 ## Architecture
 
 ```
-Browser Extension (Chrome/Edge)          Desktop App (Tauri v2)
+Browser Extension (Chrome/Edge)          Desktop App (Rune)
 ┌──────────────────────────────┐        ┌──────────────────────────┐
 │  right-click → "Pluck This"  │        │                          │
 │  popup → "Open in Desktop"   │        │  yt-plucker:// URL       │
@@ -70,63 +70,38 @@ service worker, which launches the protocol URL the same way.
 
 ## Desktop Deep-Link Handling
 
-### Startup (single-instance callback)
+### Startup (single-instance + on_open_url)
 
 ```rust
-tauri_plugin_single_instance::init(|app, argv, _cwd| {
-    show_main_window(app);
-    handle_deep_link_argv(app, &argv);
-})
+rune::single_instance("tech.xyruscode.videoplucker"); // first line of main
+App::new(spec).on_open_url(|s, url: &str, _| ui::handle_deep_link(s, url));
 ```
 
-`handle_deep_link_argv` parses every `yt-plucker://` arg with `url::Url`,
-builds a `DeepLinkPayload`, and:
-1. Emits `deep-link-received` event to the frontend
-2. Stores the payload in `PendingDeepLink` state (fallback for startup race)
+- `rune::single_instance` keeps one process and forwards a second launch's
+  arguments over a per-user named pipe. `on_open_url` receives scheme links on
+  Windows and macOS, including the one that launched the app.
+- On Linux, Rune does not deliver `on_open_url`, so `main()` parses
+  `std::env::args()` and calls `AppHandle::update` with the link.
+- Both paths call the same `ui::handle_deep_link()`, which parses
+  `yt-plucker://{action}?url=…&quality=…` with `url::Url`, switches to the Pluck
+  view, fills the URL field and runs Analyze (and Pluck for the `pluck` action).
 
-### Race Condition Fix
-
-The frontend webview may not have loaded when the single-instance callback
-fires. `app.emit()` silently drops events with no listeners.  To handle this:
-
-- `PendingDeepLink` (`Mutex<Option<DeepLinkPayload>>`) stores the last payload
-- `consume_deep_link` Tauri command returns and clears the stored payload
-- Frontend calls `invoke("consume_deep_link")` on startup *after* registering
-  the `listen("deep-link-received")` handler
-
-Both the event listener and the startup poll share `handleDeepLink()`:
-
-```js
-async function handleDeepLink({ action, url, quality }) {
-  showView("download");
-  urlInput.value = url;
-  if (action === "analyze") await analyze();
-  else if (action === "pluck") { /* analyze + pluck */ }
-}
-
-listen("deep-link-received", (event) => handleDeepLink(event.payload));
-
-// Startup fallback
-invoke("consume_deep_link").then(payload => {
-  if (payload) handleDeepLink(payload);
-});
-```
+There is no separate event/listener race: Rune state lives in the same process
+as the handler, so the link is applied directly to it. The `deep-link-received`
+compat event is retained only for the shim, and is handled by the same function.
 
 ## Protocol Registration
 
-The `tauri_plugin_deep_link` plugin handles OS-level protocol registration
-cross-platform:
+Registration is now part of each installer, not a framework plugin:
 
-```json
-// tauri.conf.json
-"plugins": {
-  "deep-link": {
-    "desktop": {
-      "schemes": ["yt-plucker"]
-    }
-  }
-}
-```
+- **Windows:** the NSIS installer writes `HKCU\Software\Classes\yt-plucker`
+  with an empty `URL Protocol` value and
+  `shell\open\command` = `"<install dir>\yt-plucker.exe" "%1"`.
+- **macOS:** `Contents/Info.plist` declares `CFBundleURLTypes` with the
+  `yt-plucker` scheme.
+- **Linux:** the `.deb` ships
+  `/usr/share/applications/yt-plucker.desktop` with
+  `MimeType=x-scheme-handler/yt-plucker;`.
 
 ## Supported Sites
 
@@ -150,6 +125,8 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 | 1.2.5     | 4.16.0  | Same protocol; unlimited parallel downloads, default-quality setting, tray teardown |
 | 1.2.5     | 4.17.0  | Same protocol; history tab, per-source subfolders, download-all, clear temp files |
 | 1.2.5     | 4.18.0  | Same protocol; immediate update detection, categorized Linux entry, Zorin-inspired look |
+| 1.2.5     | 5.0.0   | Same protocol; new UI shell and engine updates |
+| 1.3.0     | 6.0.0   | Same protocol; native Rune UI, installer-based scheme registration |
 
 ## Key Files
 
@@ -157,11 +134,11 @@ The extension detects these platforms and builds appropriate `yt-plucker://` URL
 |-----------|-----------------------------------|-----------------------------------|
 | Extension | `extension/background.js`         | Build & launch protocol URLs      |
 | Extension | `extension/popup/popup.js`        | "Open in Desktop App" button      |
-| Desktop   | `src-tauri/src/lib.rs`            | Parse argv, emit event, state mgmt|
-| Desktop   | `src/main.js`                     | Frontend handler + startup poll   |
-| Desktop   | `src-tauri/tauri.conf.json`       | deep-link plugin config           |
+| Desktop   | `src-tauri/src/lib.rs`            | single_instance, argv, tray       |
+| Desktop   | `src-tauri/src/ui.rs`             | `handle_deep_link()`              |
+| Desktop   | `scripts/installer.nsi` / `*.desktop` / `Info.plist` | scheme registration |
 | Both      | `docs/EXTENSION_DESKTOP_INTEGRATION.md` | This doc                   |
 
 ---
 
-*Last updated: v4.18.0 (immediate update detection, categorized Linux entry, Zorin-inspired look; the protocol is unchanged)*
+*Last updated: v6.0.0 (Rune UI, installer-based scheme registration; the protocol is unchanged)*

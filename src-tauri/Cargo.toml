@@ -1,44 +1,39 @@
 [package]
 name = "video-plucker"
-version = "5.0.0"
+version = "6.0.0"
 description = "Video Plucker — download videos from YouTube, X, TikTok, and streaming sites"
 authors = ["Prince Shammah"]
 edition = "2021"
 
+[[bin]]
+name = "yt-plucker"
+path = "src/main.rs"
+
 [lib]
 name = "yt_plucker_lib"
-# Desktop-only: rlib is all the bin needs. The staticlib/cdylib crate-types
-# (for mobile) build a DLL that auto-exports every symbol and blows past PE's
-# 65535-export limit under the GNU/LLD linker.
 crate-type = ["rlib"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
-
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-shell = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-store = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-deep-link = "2"
-tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
+# Rune is pre-release: pin the exact dev revision. The matching
+# [patch.crates-io] entries are in the workspace root Cargo.toml.
+rune = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d", features = ["native-file-dialog"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "67e1dc2b8674e97327dadec2b2f2caa9b9f7115d" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# The retry backoff sleeps between runs. tokio is already in the tree through
-# tauri; this only turns on its timer.
-tokio = { version = "1", features = ["time"] }
+# Drives the compat process shim, background jobs and retry backoffs.
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "process", "macros", "signal"] }
 # Streaming-site extractors: HTTP client for the site APIs. rustls-tls avoids an
-# OpenSSL build dep so the Windows/GNU + NSIS pipeline stays self-contained.
+# OpenSSL build dep so the Windows/MSVC pipeline stays self-contained.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
 async-trait = "0.1"
 scraper = "0.20"
-# AllAnime now AES-256-CTR-encrypts some episode-source responses ("tobeparsed").
+# AllAnime AES-256-CTR-encrypts some episode-source responses ("tobeparsed").
 aes = "0.8"
 ctr = "0.9"
 sha2 = "0.10"
-# YouTube's SAPISIDHASH is a SHA-1 digest.
+# YouTube's player response is a SHA-1 digest.
 sha1 = "0.10"
 base64 = "0.22"
 url = "2"
+# One-click updater: minisign signature verification of the downloaded asset.
+minisign-verify = "0.2"

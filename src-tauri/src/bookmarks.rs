@@ -24,7 +24,7 @@ use scraper::{Html, Selector};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
-use tauri::AppHandle;
+use crate::compat::AppHandle;
 
 use crate::commands::settings_cookie_file;
 use crate::pluck;
@@ -1284,7 +1284,6 @@ fn playlist_title(value: &Value) -> Option<String> {
 /// Read the saved videos of every site that has a usable login.
 ///
 /// `sites` narrows the read; without it every site with a login is read.
-#[tauri::command]
 pub async fn fetch_saved(
     app: AppHandle,
     sites: Option<Vec<String>>,
@@ -1294,7 +1293,6 @@ pub async fn fetch_saved(
 }
 
 /// The YouTube lists the signed-in account can browse.
-#[tauri::command]
 pub async fn list_youtube_lists(app: AppHandle) -> Result<Vec<SavedList>, String> {
     Ok(youtube_lists(&app).await)
 }

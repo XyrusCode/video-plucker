@@ -38,7 +38,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tauri::AppHandle;
+use crate::compat::{AppHandle, Manager};
 
 use crate::ledger::{self, LedgerEntry};
 
@@ -426,7 +426,6 @@ pub fn app_version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-#[tauri::command]
 pub fn export_dump(
     app: AppHandle,
     path: String,
@@ -462,7 +461,6 @@ pub struct ImportResult {
     pub queue: Value,
 }
 
-#[tauri::command]
 pub fn import_dump(app: AppHandle, path: String) -> Result<ImportResult, String> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not read {path}: {e}"))?;
     let dump: Value = serde_json::from_str(&text)

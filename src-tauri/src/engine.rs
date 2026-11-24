@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::ShellExt;
+use crate::compat::process::Command;
+use crate::compat::{AppHandle, Manager, ShellExt};
 
 /// Set once an engine update succeeded this session, so repeated failures
 /// don't re-download the same binary over and over.
@@ -50,7 +50,7 @@ pub fn plugins_dir(app: &AppHandle) -> Option<PathBuf> {
 /// (yt-dlp #7271). Drop-in replacement for `.sidecar("yt-dlp")`.
 pub fn ytdlp_command(
     app: &AppHandle,
-) -> Result<tauri_plugin_shell::process::Command, String> {
+) -> Result<Command, String> {
     let mut cmd = match updated_engine_path(app) {
         Some(path) => app.shell().command(path),
         None => app.shell().sidecar("yt-dlp").map_err(|e| e.to_string())?,
