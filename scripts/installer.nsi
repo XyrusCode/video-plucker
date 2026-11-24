@@ -20,8 +20,8 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "DisplayName" "Video Plucker"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "DisplayVersion" "${VERSION}"
-  WriteDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "NoModify" 1
-  WriteDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "NoRepair" 1
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "NoModify" 1
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Video Plucker" "NoRepair" 1
   WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
 
