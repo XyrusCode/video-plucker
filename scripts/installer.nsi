@@ -1,5 +1,9 @@
 ; NSIS installer for the Rune build of Video Plucker.
-; Invoked with: makensis /DVERSION=x.y.z /DBIN=<staging dir> /DOUT=<setup.exe> scripts/installer.nsi
+; Invoked with: makensis /DVERSION=x.y.z /DBIN=<staging dir> /DOUT=<setup.exe> /DICON=<icon.ico> scripts/installer.nsi
+
+!ifndef ICON
+  !define ICON "..\src-tauri\icons\icon.ico"
+!endif
 
 Name "Video Plucker"
 OutFile "${OUT}"
@@ -7,8 +11,8 @@ InstallDir "$LOCALAPPDATA\Programs\Video Plucker"
 InstallDirRegKey HKCU "Software\Video Plucker" "InstallDir"
 RequestExecutionLevel user
 ShowInstDetails show
-Icon "src-tauri\icons\icon.ico"
-UninstallIcon "src-tauri\icons\icon.ico"
+Icon "${ICON}"
+UninstallIcon "${ICON}"
 
 Section "Install"
   SetOutPath "$INSTDIR"

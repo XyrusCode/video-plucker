@@ -130,7 +130,7 @@ jobs:
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
           $installer = Join-Path (Get-Location) "video-plucker_${{ needs.check.outputs.version }}_x64-setup.exe"
-          & $makensis "/DVERSION=${{ needs.check.outputs.version }}" "/DBIN=$(Resolve-Path dist)" "/DOUT=$installer" scripts/installer.nsi
+          & $makensis "/DVERSION=${{ needs.check.outputs.version }}" "/DBIN=$(Resolve-Path dist)" "/DOUT=$installer" "/DICON=$(Resolve-Path src-tauri/icons/icon.ico)" scripts/installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package (macOS dmg)
