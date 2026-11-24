@@ -1035,7 +1035,7 @@ fn picker(
     current: usize,
     is_open: bool,
     t: tok::Theme,
-    choose: impl Fn(&mut AppState, usize) + 'static,
+    choose: impl Fn(&mut AppState, usize) + Clone + 'static,
 ) -> El {
     let shown = options.get(current).copied().unwrap_or("");
     let mut stack = col().key(key).gap(space::S1);
@@ -1063,6 +1063,7 @@ fn picker(
         let mut list = col().key(format!("{key}-options")).gap(1.0);
         for (i, opt) in options.iter().enumerate() {
             let o = (*opt).to_string();
+            let choose = choose.clone();
             list = list.child(
                 el()
                     .key(format!("{key}-opt-{i}"))
@@ -1762,12 +1763,14 @@ pub fn spec() -> AppSpec<AppState> {
     spec.setup = Some(|_, waker| compat::set_waker(waker));
     spec.poll = Some(|s: &mut AppState, _, _tx: &mut Tx| {
         let mut changed = false;
-        if let Some(rx) = s.rx.as_mut() {
+        let mut rx = s.rx.take();
+        if let Some(rx) = rx.as_mut() {
             while let Ok(event) = rx.try_recv() {
                 apply_event(s, event);
                 changed = true;
             }
         }
+        s.rx = rx;
         changed
     });
     spec

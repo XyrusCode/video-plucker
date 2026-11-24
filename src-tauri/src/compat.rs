@@ -305,13 +305,17 @@ pub mod process {
         }
 
         pub async fn output(mut self) -> Result<std::process::Output, String> {
-            let _guard = super::runtime().enter();
-            self.inner
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-                .map_err(|e| e.to_string())
+            // Build the future inside the runtime context, but don't hold the
+            // non-Send EnterGuard across the await.
+            let future = {
+                let _guard = super::runtime().enter();
+                let _ = &mut self.inner;
+                self.inner
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+            };
+            future.await.map_err(|e| e.to_string())
         }
 
         pub fn spawn(mut self) -> Result<(Receiver, CommandChild), String> {
