@@ -51,6 +51,31 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+      - name: Verify 5.x config migration headlessly
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP "vp-legacy-data"
+          New-Item -ItemType Directory -Force "$fixture\localstorage" | Out-Null
+          $bytes = [System.Collections.Generic.List[byte]]::new()
+          $bytes.AddRange([Text.Encoding]::ASCII.GetBytes("vp.themeMode"))
+          $bytes.AddRange([Text.Encoding]::Unicode.GetBytes("night-owl"))
+          $bytes.AddRange([Text.Encoding]::ASCII.GetBytes("video-plucker-terms-accepted"))
+          $bytes.AddRange([Text.Encoding]::Unicode.GetBytes("true"))
+          [IO.File]::WriteAllBytes("$fixture\localstorage\tauri_localhost_0.localstorage-wal", $bytes.ToArray())
+
+          $env:VP_MIGRATION_REPORT = $fixture
+          cargo run --quiet --
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:VP_MIGRATION_REPORT
+
+          $reportPath = Join-Path $fixture "migration-report.json"
+          if (-not (Test-Path $reportPath)) { throw "No migration report was written" }
+          $report = Get-Content $reportPath -Raw | ConvertFrom-Json
+          if ($report.settings.themeMode -ne "dark") { throw "Expected migrated dark theme, got $($report.settings.themeMode)" }
+          if ($report.settings.termsAccepted -ne $true) { throw "Legacy terms acceptance was not migrated" }
+          if ($report.settings.legacyMigrated -ne $true) { throw "Migration flag was not persisted" }
+          if ($report.termsOpen -ne $false) { throw "First-run terms would still open" }
+
       - name: Upload snapshots
         if: always()
         uses: actions/upload-artifact@v4
